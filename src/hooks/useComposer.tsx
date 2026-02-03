@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 export interface ComposerTemplate {
   id?: string;
   name: string;
-  content_type: 'linkedin' | 'email' | 'sms' | 'custom';
+  content_type: 'instagram' | 'email' | 'sms' | 'custom';
   title: string;
   content: string;
   metadata?: Record<string, any>;
@@ -20,11 +20,12 @@ export interface ComposerTemplate {
 export interface ComposerSequence {
   id?: string;
   name: string;
-  content_type: 'linkedin' | 'email' | 'sms' | 'custom';
+  content_type: 'instagram' | 'email' | 'sms' | 'custom';
   description?: string;
   steps: Array<{
     title: string;
     content: string;
+    media_url?: string;
     delay?: number;
     metadata?: Record<string, any>;
   }>;
@@ -37,6 +38,7 @@ export interface ComposerSequence {
 export const useComposer = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] = useState<string>('');
+  const [generatedMediaUrl, setGeneratedMediaUrl] = useState<string>('');
   const [templates, setTemplates] = useState<ComposerTemplate[]>([]);
   const [sequences, setSequences] = useState<ComposerSequence[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -46,9 +48,10 @@ export const useComposer = () => {
 
   const generateContent = async (
     prompt: string, 
-    contentType: 'linkedin' | 'email' | 'sms' | 'custom',
+    contentType: 'instagram' | 'email' | 'sms' | 'custom',
     context?: string,
-    crmData?: Record<string, any>
+    crmData?: Record<string, any>,
+    sourceImageUrl?: string
   ) => {
     if (!user || !currentOrganization) {
       toast.error('Please log in to use the composer');
@@ -62,7 +65,8 @@ export const useComposer = () => {
           message: prompt,
           contentType,
           context,
-          crmData
+          crmData,
+          sourceImageUrl
         }
       });
 
@@ -70,7 +74,14 @@ export const useComposer = () => {
         throw new Error(error.message || 'Failed to generate content');
       }
 
-      setGeneratedContent(data.content);
+      if (contentType === 'instagram') {
+        setGeneratedMediaUrl(data.media_url || '');
+        setGeneratedContent('');
+        return data.media_url;
+      }
+
+      setGeneratedContent(data.content || '');
+      setGeneratedMediaUrl('');
       return data.content;
     } catch (error) {
       console.error('Content generation error:', error);
@@ -78,6 +89,36 @@ export const useComposer = () => {
       throw error;
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const uploadImage = async (file: File) => {
+    if (!user) {
+      toast.error('Please log in to upload images');
+      return null;
+    }
+
+    try {
+      const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
+      const filePath = `${user.id}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+      const { error } = await supabase.storage
+        .from('composer-images')
+        .upload(filePath, file, {
+          contentType: file.type || 'image/png',
+          upsert: true
+        });
+
+      if (error) throw error;
+
+      const { data } = supabase.storage
+        .from('composer-images')
+        .getPublicUrl(filePath);
+
+      return data.publicUrl;
+    } catch (error) {
+      console.error('Image upload error:', error);
+      toast.error('Failed to upload image');
+      throw error;
     }
   };
 
@@ -227,10 +268,13 @@ export const useComposer = () => {
     isGenerating,
     generatedContent,
     setGeneratedContent,
+    generatedMediaUrl,
+    setGeneratedMediaUrl,
     templates,
     sequences,
     isLoading,
     generateContent,
+    uploadImage,
     saveTemplate,
     loadTemplates,
     saveSequence,

@@ -1,26 +1,15 @@
-import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { 
-  Sparkles, 
-  Copy, 
-  Save, 
-  Loader2, 
-  Plus,
-  Trash2,
-  Download
-} from 'lucide-react';
-import { useComposer, ComposerTemplate, ComposerSequence } from '@/hooks/useComposer';
+import { useComposer } from '@/hooks/useComposer';
 import { toast } from 'sonner';
+import { GenerateTab } from '@/components/Composer/GenerateTab';
+import { InstagramGenerateTab } from '@/components/Composer/InstagramGenerateTab';
+import { TemplatesTab } from '@/components/Composer/TemplatesTab';
+import { SequencesTab } from '@/components/Composer/SequencesTab';
+import { SequenceBuilder, type SequenceStep } from '@/components/Composer/SequenceBuilder';
 
 interface ComposerInterfaceProps {
-  contentType: 'linkedin' | 'email' | 'sms' | 'custom';
+  contentType: 'instagram' | 'email' | 'sms' | 'custom';
   placeholder: string;
   suggestions: string[];
 }
@@ -30,16 +19,19 @@ export const ComposerInterface = ({ contentType, placeholder, suggestions }: Com
   const [context, setContext] = useState('');
   const [templateName, setTemplateName] = useState('');
   const [sequenceName, setSequenceName] = useState('');
-  const [sequenceSteps, setSequenceSteps] = useState<Array<{ title: string; content: string; delay?: number }>>([]);
-  
+  const [sequenceSteps, setSequenceSteps] = useState<SequenceStep[]>([]);
+  const [sourceImageUrl, setSourceImageUrl] = useState<string | null>(null);
+
   const {
     isGenerating,
     generatedContent,
     setGeneratedContent,
+    generatedMediaUrl,
+    setGeneratedMediaUrl,
     templates,
     sequences,
-    isLoading,
     generateContent,
+    uploadImage,
     saveTemplate,
     loadTemplates,
     saveSequence,
@@ -48,11 +40,12 @@ export const ComposerInterface = ({ contentType, placeholder, suggestions }: Com
     deleteSequence
   } = useComposer();
 
-  // Load templates and sequences when component mounts
   useEffect(() => {
     loadTemplates();
     loadSequences();
-  }, []); // Empty dependency array since loadTemplates and loadSequences are stable
+  }, []);
+
+  const isInstagram = contentType === 'instagram';
 
   const handleGenerate = async () => {
     if (!prompt.trim()) {
@@ -61,7 +54,7 @@ export const ComposerInterface = ({ contentType, placeholder, suggestions }: Com
     }
 
     try {
-      await generateContent(prompt, contentType, context);
+      await generateContent(prompt, contentType, context, undefined, sourceImageUrl || undefined);
     } catch (error) {
       // Error already handled in hook
     }
@@ -79,6 +72,8 @@ export const ComposerInterface = ({ contentType, placeholder, suggestions }: Com
   };
 
   const handleSaveTemplate = async () => {
+    if (isInstagram) return;
+
     if (!generatedContent || !templateName.trim()) {
       toast.error('Please provide a template name and generate content first');
       return;
@@ -118,16 +113,40 @@ export const ComposerInterface = ({ contentType, placeholder, suggestions }: Com
   };
 
   const addSequenceStep = () => {
+    if (isInstagram) {
+      if (!generatedMediaUrl) {
+        toast.error('Please generate an image first');
+        return;
+      }
+
+      setSequenceSteps(prev => [
+        ...prev,
+        {
+          title: `Frame ${prev.length + 1}`,
+          content: prompt || 'Instagram image',
+          media_url: generatedMediaUrl,
+          delay: prev.length === 0 ? 0 : 24
+        }
+      ]);
+      setGeneratedMediaUrl('');
+      setPrompt('');
+      toast.success('Image added to sequence');
+      return;
+    }
+
     if (!generatedContent) {
       toast.error('Please generate content first');
       return;
     }
 
-    setSequenceSteps(prev => [...prev, {
-      title: `Step ${prev.length + 1}`,
-      content: generatedContent,
-      delay: prev.length === 0 ? 0 : 24 // 24 hours delay for subsequent steps
-    }]);
+    setSequenceSteps(prev => [
+      ...prev,
+      {
+        title: `Step ${prev.length + 1}`,
+        content: generatedContent,
+        delay: prev.length === 0 ? 0 : 24
+      }
+    ]);
     setGeneratedContent('');
     setPrompt('');
     toast.success('Step added to sequence');
@@ -137,255 +156,104 @@ export const ComposerInterface = ({ contentType, placeholder, suggestions }: Com
     setSequenceSteps(prev => prev.filter((_, i) => i !== index));
   };
 
+  const handleUploadImage = async (file: File) => {
+    try {
+      const uploadedUrl = await uploadImage(file);
+      if (uploadedUrl) {
+        setSourceImageUrl(uploadedUrl);
+      }
+    } catch (error) {
+      // Error already handled in hook
+    }
+  };
+
+  const handleDownloadGenerated = () => {
+    if (!generatedMediaUrl) return;
+
+    const link = document.createElement('a');
+    link.href = generatedMediaUrl;
+    link.download = `instagram-image-${Date.now()}.png`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleUseGeneratedAsSource = () => {
+    if (!generatedMediaUrl) return;
+
+    setSourceImageUrl(generatedMediaUrl);
+    setGeneratedMediaUrl('');
+  };
+
   const filteredTemplates = templates.filter(t => t.content_type === contentType);
   const filteredSequences = sequences.filter(s => s.content_type === contentType);
 
   return (
     <div className="space-y-6">
       <Tabs defaultValue="generate" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className={`grid w-full ${isInstagram ? 'grid-cols-2' : 'grid-cols-3'}`}>
           <TabsTrigger value="generate">Generate</TabsTrigger>
-          <TabsTrigger value="templates">Templates ({filteredTemplates.length})</TabsTrigger>
+          {!isInstagram && (
+            <TabsTrigger value="templates">Templates ({filteredTemplates.length})</TabsTrigger>
+          )}
           <TabsTrigger value="sequences">Sequences ({filteredSequences.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="generate" className="space-y-4">
-          {/* Suggestions */}
-          <div>
-            <Label className="text-sm font-medium">Quick Suggestions</Label>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {suggestions.map((suggestion, index) => (
-                <Badge
-                  key={index}
-                  variant="outline"
-                  className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
-                  onClick={() => handleSuggestionClick(suggestion)}
-                >
-                  {suggestion}
-                </Badge>
-              ))}
-            </div>
-          </div>
-
-          {/* Prompt Input */}
-          <div className="space-y-2">
-            <Label htmlFor="prompt">Content Prompt</Label>
-            <Textarea
-              id="prompt"
+          {isInstagram ? (
+            <InstagramGenerateTab
               placeholder={placeholder}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              className="min-h-[100px]"
+              suggestions={suggestions}
+              prompt={prompt}
+              context={context}
+              isGenerating={isGenerating}
+              sourceImageUrl={sourceImageUrl}
+              generatedImageUrl={generatedMediaUrl || null}
+              onPromptChange={setPrompt}
+              onContextChange={setContext}
+              onSuggestionClick={handleSuggestionClick}
+              onGenerate={handleGenerate}
+              onUploadImage={handleUploadImage}
+              onClearSourceImage={() => setSourceImageUrl(null)}
+              onDownloadGenerated={handleDownloadGenerated}
+              onUseGeneratedAsSource={handleUseGeneratedAsSource}
+              onAddSequenceStep={addSequenceStep}
             />
-          </div>
-
-          {/* Context Input */}
-          <div className="space-y-2">
-            <Label htmlFor="context">Additional Context (Optional)</Label>
-            <Textarea
-              id="context"
-              placeholder="Provide additional context, target audience details, or specific requirements..."
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              className="min-h-[80px]"
-            />
-          </div>
-
-          {/* Generate Button */}
-          <Button 
-            onClick={handleGenerate} 
-            disabled={isGenerating}
-            className="w-full"
-          >
-            {isGenerating ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 mr-2" />
-                Generate Content
-              </>
-            )}
-          </Button>
-
-          {/* Generated Content */}
-          {generatedContent && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Generated Content</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div 
-                  className="p-4 bg-muted rounded-lg prose prose-sm max-w-none leading-relaxed [&>p]:mb-3 [&>ul]:mb-3 [&>li]:mb-1 [&>h3]:mb-2 [&>h4]:mb-2"
-                  dangerouslySetInnerHTML={{ __html: generatedContent }}
-                />
-                
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    onClick={handleCopyContent}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <Copy className="w-4 h-4 mr-2" />
-                    Copy
-                  </Button>
-                  
-                  <Button
-                    onClick={addSequenceStep}
-                    variant="outline"
-                    size="sm"
-                    className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
-                  >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add to Sequence
-                  </Button>
-                </div>
-
-                <Separator />
-
-                {/* Save as Template */}
-                <div className="space-y-2">
-                  <Label htmlFor="template-name">Save as Template</Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="template-name"
-                      placeholder="Template name..."
-                      value={templateName}
-                      onChange={(e) => setTemplateName(e.target.value)}
-                    />
-                    <Button onClick={handleSaveTemplate} variant="outline">
-                      <Save className="w-4 h-4 mr-2" />
-                      Save
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Sequence Builder - Always show if steps exist or can be created */}
-          <Card className="border-blue-200 bg-blue-50/30">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Plus className="h-5 w-5 text-blue-600" />
-                Sequence Builder
-                {sequenceSteps.length > 0 && (
-                  <Badge variant="secondary" className="ml-2">
-                    {sequenceSteps.length} step{sequenceSteps.length !== 1 ? 's' : ''}
-                  </Badge>
-                )}
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Build multi-step content sequences. Generate content and click "Add to Sequence" to build your sequence.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {sequenceSteps.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  <div className="flex flex-col items-center gap-2">
-                    <Plus className="h-8 w-8 text-muted-foreground/50" />
-                    <p>No steps in sequence yet</p>
-                    <p className="text-sm">Generate content above and click "Add to Sequence" to start building</p>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {sequenceSteps.map((step, index) => (
-                    <div key={index} className="p-4 border rounded-lg bg-white">
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline">Step {index + 1}</Badge>
-                          <h4 className="font-medium">{step.title}</h4>
-                        </div>
-                        <Button
-                          onClick={() => removeSequenceStep(index)}
-                          variant="ghost"
-                          size="sm"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </div>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Delay: {step.delay === 0 ? 'Immediate' : `${step.delay} hours`}
-                      </p>
-                      <div 
-                        className="p-3 bg-muted rounded text-sm prose prose-sm max-w-none leading-relaxed [&>p]:mb-2 [&>ul]:mb-2 [&>li]:mb-1"
-                        dangerouslySetInnerHTML={{ __html: step.content }}
-                      />
-                    </div>
-                  ))}
-
-                  <div className="space-y-2 pt-4 border-t">
-                    <Label htmlFor="sequence-name">Save Sequence</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="sequence-name"
-                        placeholder="Sequence name..."
-                        value={sequenceName}
-                        onChange={(e) => setSequenceName(e.target.value)}
-                      />
-                      <Button onClick={handleSaveSequence} variant="outline">
-                        <Save className="w-4 h-4 mr-2" />
-                        Save Sequence
-                      </Button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="templates" className="space-y-4">
-          {filteredTemplates.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-8">
-                <p className="text-muted-foreground">No templates saved yet</p>
-              </CardContent>
-            </Card>
           ) : (
-            <div className="grid gap-4">
-              {filteredTemplates.map((template) => (
-                <Card key={template.id}>
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-base">{template.name}</CardTitle>
-                        <p className="text-sm text-muted-foreground">{template.title}</p>
-                      </div>
-                      <Button
-                        onClick={() => deleteTemplate(template.id!)}
-                        variant="ghost"
-                        size="sm"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div 
-                      className="p-3 bg-muted rounded text-sm mb-3 prose prose-sm max-w-none leading-relaxed [&>p]:mb-2 [&>ul]:mb-2 [&>li]:mb-1"
-                      dangerouslySetInnerHTML={{ __html: template.content }}
-                    />
-                    <Button
-                      onClick={() => {
-                        navigator.clipboard.writeText(template.content);
-                        toast.success('Template copied to clipboard');
-                      }}
-                      variant="outline"
-                      size="sm"
-                    >
-                      <Copy className="w-4 h-4 mr-2" />
-                      Copy
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <GenerateTab
+              placeholder={placeholder}
+              suggestions={suggestions}
+              prompt={prompt}
+              context={context}
+              isGenerating={isGenerating}
+              generatedContent={generatedContent}
+              templateName={templateName}
+              onPromptChange={setPrompt}
+              onContextChange={setContext}
+              onSuggestionClick={handleSuggestionClick}
+              onGenerate={handleGenerate}
+              onCopyContent={handleCopyContent}
+              onAddSequenceStep={addSequenceStep}
+              onTemplateNameChange={setTemplateName}
+              onSaveTemplate={handleSaveTemplate}
+            />
           )}
+
+          <SequenceBuilder
+            steps={sequenceSteps}
+            sequenceName={sequenceName}
+            onSequenceNameChange={setSequenceName}
+            onSaveSequence={handleSaveSequence}
+            onRemoveStep={removeSequenceStep}
+            renderHtmlContent={!isInstagram}
+          />
         </TabsContent>
+
+        {!isInstagram && (
+          <TabsContent value="templates" className="space-y-4">
+            <TemplatesTab templates={filteredTemplates} onDeleteTemplate={deleteTemplate} />
+          </TabsContent>
+        )}
 
         <TabsContent value="sequences" className="space-y-4">
           <div className="flex justify-between items-center">
@@ -396,90 +264,7 @@ export const ComposerInterface = ({ contentType, placeholder, suggestions }: Com
               </p>
             </div>
           </div>
-          
-          {filteredSequences.length === 0 ? (
-            <Card>
-              <CardContent className="text-center py-8">
-                <div className="flex flex-col items-center gap-2">
-                  <Plus className="h-12 w-12 text-muted-foreground/30" />
-                  <p className="text-muted-foreground font-medium">No sequences created yet</p>
-                  <p className="text-sm text-muted-foreground">
-                    Build sequences by generating content and adding steps in the Generate tab
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="grid gap-4">
-              {filteredSequences.map((sequence) => (
-                <Card key={sequence.id}>
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-base">{sequence.name}</CardTitle>
-                        <p className="text-sm text-muted-foreground">
-                          {sequence.steps.length} steps • {sequence.description}
-                        </p>
-                      </div>
-                      <Button
-                        onClick={() => deleteSequence(sequence.id!)}
-                        variant="ghost"
-                        size="sm"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </CardHeader>
-                   <CardContent>
-                    <div className="space-y-4">
-                      {sequence.steps.map((step, index) => (
-                        <div key={index} className="p-4 border rounded-lg bg-background">
-                          <div className="flex justify-between items-start mb-3">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline">Step {index + 1}</Badge>
-                              <h5 className="font-medium">{step.title}</h5>
-                            </div>
-                            <Button
-                              onClick={() => {
-                                navigator.clipboard.writeText(step.content);
-                                toast.success('Step content copied to clipboard');
-                              }}
-                              variant="ghost"
-                              size="sm"
-                            >
-                              <Copy className="w-4 h-4" />
-                            </Button>
-                          </div>
-                          <p className="text-sm text-muted-foreground mb-3">
-                            Delay: {step.delay === 0 ? 'Immediate' : `${step.delay} hours`}
-                          </p>
-                          <div 
-                            className="p-3 bg-muted rounded text-sm prose prose-sm max-w-none leading-relaxed [&>p]:mb-3 [&>ul]:mb-3 [&>li]:mb-1 [&>h3]:mb-2 [&>h4]:mb-2"
-                            dangerouslySetInnerHTML={{ __html: step.content }}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                    <Button
-                      onClick={() => {
-                        const sequenceText = sequence.steps
-                          .map((step, i) => `Step ${i + 1}: ${step.title}\nDelay: ${step.delay === 0 ? 'Immediate' : `${step.delay} hours`}\n\n${step.content}`)
-                          .join('\n\n---\n\n');
-                        navigator.clipboard.writeText(sequenceText);
-                        toast.success('Sequence copied to clipboard');
-                      }}
-                      variant="outline"
-                      size="sm"
-                      className="mt-3"
-                    >
-                      <Download className="w-4 h-4 mr-2" />
-                      Export Sequence
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
+          <SequencesTab sequences={filteredSequences} onDeleteSequence={deleteSequence} />
         </TabsContent>
       </Tabs>
     </div>
