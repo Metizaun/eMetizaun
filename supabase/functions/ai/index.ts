@@ -13,20 +13,27 @@ const corsHeaders = {
 const GEMINI_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-const CRM_CONTEXT = [
-  "Leads: Potenciais clientes. Campos: first_name, company, status.",
-  "Deals: Negociações. Campos: title, value, stage ('Discovery', 'Proposal', 'Closed Won').",
-  "Tasks: Tarefas. Campos: title, status ('pending', 'completed'), due_date.",
-  "Companies: Empresas clientes. Campos: name, industry.",
-  "Contacts: Pessoas vinculadas a empresas.",
-].join("\n");
+const ALLOWED_TABLES = [
+  "leads",
+  "lead_lists",
+  "deals",
+  "notes",
+  "tasks",
+  "partners",
+  "companies",
+  "contacts",
+];
+
+const INSERT_TABLES = ["tasks", "notes"];
+
+const METADATA_TTL_MS = 5 * 60 * 1000;
 
 type GeminiPart =
   | { text: string }
   | {
       functionCall: {
         name: string;
-        args?: Record<string, unknown>;
+        args?: Record<string, unknown> | string;
       };
     }
   | {
@@ -44,83 +51,84 @@ type GeminiResponse = {
   }>;
 };
 
+type TableMeta = {
+  columns: string[];
+  hasOrganizationId: boolean;
+};
+
+type MetadataCache = {
+  expiresAt: number;
+  tables: Record<string, TableMeta>;
+};
+
+let metadataCache: MetadataCache | null = null;
+
 const tools = [
   {
     functionDeclarations: [
       {
-        name: "search_leads",
+        name: "crm_query",
         description:
-          "Busca leads por nome, sobrenome ou empresa. Se query/status forem omitidos, retorna os leads mais recentes.",
+          "Consulta generica em tabelas CRM usando parametros estruturados.",
         parameters: {
           type: "object",
           properties: {
-            query: { type: "string" },
-            status: { type: "string" },
-          },
-          required: [],
-        },
-      },
-      {
-        name: "search_deals",
-        description:
-          "Busca deals por valor mínimo e/ou estágio (Discovery, Proposal, Closed Won). Se filtros forem omitidos, retorna os deals mais recentes.",
-        parameters: {
-          type: "object",
-          properties: {
-            min_value: { type: "number" },
-            stage: { type: "string" },
-          },
-          required: [],
-        },
-      },
-      {
-        name: "search_companies",
-        description: "Busca empresas pelo nome. Se name_query for omitido, retorna as empresas mais recentes.",
-        parameters: {
-          type: "object",
-          properties: {
-            name_query: { type: "string" },
-          },
-          required: [],
-        },
-      },
-      {
-        name: "search_contacts",
-        description: "Busca contatos por nome, email ou empresa. Se name_query for omitido, retorna os contatos mais recentes.",
-        parameters: {
-          type: "object",
-          properties: {
-            name_query: { type: "string" },
-          },
-          required: [],
-        },
-      },
-      {
-        name: "search_tasks",
-        description:
-          "Busca tarefas por status e/ou título. Se status não for informado, assume 'Pending'. Se título for omitido, retorna tarefas mais recentes.",
-        parameters: {
-          type: "object",
-          properties: {
-            status: { type: "string" },
-            title_query: { type: "string" },
-          },
-          required: [],
-        },
-      },
-      {
-        name: "get_metrics",
-        description:
-          "Retorna contagem agrupada por status para leads, deals ou tasks.",
-        parameters: {
-          type: "object",
-          properties: {
-            entity: {
-              type: "string",
-              enum: ["leads", "deals", "tasks"],
+            table: { type: "string", enum: ALLOWED_TABLES },
+            select: {
+              type: "array",
+              items: { type: "string" },
+            },
+            filters: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  column: { type: "string" },
+                  op: {
+                    type: "string",
+                    enum: ["eq", "ilike", "gte", "lte", "in"],
+                  },
+                  value: {},
+                },
+                required: ["column", "op", "value"],
+              },
+            },
+            order_by: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  column: { type: "string" },
+                  ascending: { type: "boolean" },
+                },
+                required: ["column"],
+              },
+            },
+            limit: { type: "number" },
+            offset: { type: "number" },
+            aggregate: {
+              type: "object",
+              properties: {
+                type: { type: "string", enum: ["count"] },
+                column: { type: "string" },
+              },
+              required: ["type"],
             },
           },
-          required: ["entity"],
+          required: ["table"],
+        },
+      },
+      {
+        name: "crm_insert",
+        description:
+          "Insere dados no CRM. Somente permitido para tasks e notes.",
+        parameters: {
+          type: "object",
+          properties: {
+            table: { type: "string", enum: INSERT_TABLES },
+            values: { type: "object" },
+          },
+          required: ["table", "values"],
         },
       },
     ],
@@ -135,48 +143,82 @@ function getTextFromParts(parts?: GeminiPart[]) {
   return textParts.map((part) => part.text).join("\n").trim();
 }
 
-
-function isDefinitionQuery(text: string) {
-  return /(o que e|o que eh|defina|definicao|conceito|explica)/.test(text);
+function coerceArgs(args?: Record<string, unknown> | string) {
+  if (!args) return {};
+  if (typeof args === "string") {
+    try {
+      return JSON.parse(args);
+    } catch {
+      return {};
+    }
+  }
+  return args;
 }
 
-function hasAny(text: string, terms: string[]) {
-  return terms.some((term) => text.includes(term));
-}
+async function loadMetadata(supabase: ReturnType<typeof createClient>) {
+  const now = Date.now();
+  if (metadataCache && metadataCache.expiresAt > now) {
+    return metadataCache.tables;
+  }
 
-function isEntityIntent(message: string, entity: string) {
-  const text = message.toLowerCase();
-  if (isDefinitionQuery(text)) return false;
-  const terms: Record<string, string[]> = {
-    leads: ["lead", "leads"],
-    contacts: ["contato", "contatos", "contact", "contacts"],
-    companies: ["empresa", "empresas", "company", "companies"],
-    deals: ["deal", "deals", "negocio", "negocios"],
-    tasks: ["task", "tasks", "tarefa", "tarefas"],
+  const { data, error } = await supabase
+    .schema("information_schema")
+    .from("columns")
+    .select("table_name,column_name")
+    .eq("table_schema", "public")
+    .in("table_name", ALLOWED_TABLES);
+
+  if (error) {
+    throw new Error(`Metadata error: ${error.message}`);
+  }
+
+  const tables: Record<string, TableMeta> = {};
+  for (const table of ALLOWED_TABLES) {
+    tables[table] = { columns: [], hasOrganizationId: false };
+  }
+
+  for (const row of data ?? []) {
+    const tableName = row.table_name as string;
+    const columnName = row.column_name as string;
+    if (!tables[tableName]) continue;
+    tables[tableName].columns.push(columnName);
+    if (columnName === "organization_id") {
+      tables[tableName].hasOrganizationId = true;
+    }
+  }
+
+  metadataCache = {
+    expiresAt: now + METADATA_TTL_MS,
+    tables,
   };
-  return hasAny(text, terms[entity] || []);
+
+  return tables;
 }
 
-function isCountIntent(message: string) {
-  const text = message.toLowerCase();
-  return /(quantos|quantas|total|numero)/.test(text);
+function formatMetadata(tables: Record<string, TableMeta>) {
+  const lines: string[] = [];
+  for (const table of ALLOWED_TABLES) {
+    const meta = tables[table];
+    if (!meta || meta.columns.length === 0) continue;
+    lines.push(`- ${table}: ${meta.columns.join(", ")}`);
+  }
+  return lines.join("\n");
 }
 
-function isListIntent(message: string) {
-  const text = message.toLowerCase();
-  return /(quem|liste|lista|meus|minhas|recentes|ultimos)/.test(text);
+function validateColumns(meta: TableMeta, columns: string[]) {
+  const invalid = columns.filter(
+    (column) => column !== "*" && !meta.columns.includes(column),
+  );
+  if (invalid.length) {
+    return `Invalid columns: ${invalid.join(", ")}`;
+  }
+  return null;
 }
 
-function isOpenTasksIntent(message: string) {
-  const text = message.toLowerCase();
-  return /(em aberto|pendente|pendentes|pending|abertas|aberto)/.test(text);
-}
-
-function extractCompanyName(message: string) {
-  const text = message.toLowerCase();
-  const match = text.match(/empresa\s+([^?\.\\n]+)/);
-  if (!match) return "";
-  return match[1].replace(/\s+$/, "").trim();
+function getLimit(limit?: number) {
+  const safe = typeof limit === "number" ? Math.floor(limit) : 20;
+  if (safe <= 0) return 20;
+  return Math.min(safe, 50);
 }
 
 async function callGemini(
@@ -267,27 +309,40 @@ serve(async (req) => {
       });
     }
 
+    const { data: roles, error: rolesError } = await supabase
+      .from("user_roles")
+      .select("organization_id")
+      .eq("user_id", userData.user.id)
+      .limit(1);
+
+    if (rolesError || !roles || roles.length === 0) {
+      return new Response(JSON.stringify({ error: "No organization found" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const organizationId = roles[0].organization_id as string;
+    const tableMetadata = await loadMetadata(supabase);
+    const metadataText = formatMetadata(tableMetadata);
+
     const systemInstruction = [
-      "Voce e um agente de dados CRM autonomo. Use function calling quando precisar consultar dados.",
-      "Sempre que precisar de dados do CRM, chame uma funcao apropriada.",
-      "Se o usuario perguntar sobre entidades sem filtro, chame search_* com {}.",
-      "Se o usuario perguntar contagens, chame get_metrics quando aplicavel ou responda com base na consulta.",
+      "Voce e um agente de dados CRM conectado ao banco via Supabase.",
+      "Use exclusivamente as tools crm_query e crm_insert para ler e escrever.",
+      "RLS e obrigatorio. A organization_id sempre deve ser respeitada.",
+      "Caso precise de mais contexto para criar uma tarefa, pergunte ao usuario sua necessidade.",
       deepSearch
         ? "Responda com mais profundidade, detalhando raciocinio e recomendacoes."
         : "Responda de forma direta e objetiva.",
       "",
-      "Estrutura do CRM:",
-      CRM_CONTEXT,
+      "Metadados das tabelas permitidas:",
+      metadataText,
       "",
       "Exemplos:",
-      "- Usuario: 'Quem sao meus leads?' -> call search_leads({})",
-      "- Usuario: 'Leads recentes' -> call search_leads({})",
-      "- Usuario: 'Quem sao meus contatos?' -> call search_contacts({})",
-      "- Usuario: 'Empresas recentes' -> call search_companies({})",
-      "- Usuario: 'Deals recentes' -> call search_deals({})",
-      "- Usuario: 'Minhas tarefas' -> call search_tasks({})",
-      "- Usuario: 'Quantos leads eu tenho?' -> call get_metrics({ entity: 'leads' })",
-      "- Usuario: 'Quantas tarefas em aberto?' -> call search_tasks({ status: 'Pending' })",
+      "- Usuario: 'Quantas tasks em aberto?' -> crm_query em tasks com filtro status Pending e aggregate count.",
+      "- Usuario: 'Empresa Acme tem quantas tasks?' -> crm_query em companies para pegar id, depois crm_query em tasks com company_id.",
+      "- Usuario: 'Crie uma task para amanha' -> crm_insert em tasks com title e due_date.",
+      "- Usuario: 'Crie uma nota sobre negociacao X' -> crm_insert em notes.",
     ].join("\n");
 
     const contents: Array<{ role: string; parts: GeminiPart[] }> = [
@@ -307,336 +362,191 @@ serve(async (req) => {
       const functionCalls = parts.filter(
         (part) => "functionCall" in part,
       ) as Array<{
-        functionCall: { name: string; args?: Record<string, unknown> };
+        functionCall: { name: string; args?: Record<string, unknown> | string };
       }>;
 
       if (functionCalls.length === 0) {
-        if (iteration === 0) {
-          const intentOrder = ["tasks", "leads", "deals", "contacts", "companies"];
-          const matched = intentOrder.find((entity) => isEntityIntent(message, entity));
-          if (matched) {
-            let name = "";
-            let result: unknown = [];
-            try {
-              const countIntent = isCountIntent(message);
-              if (matched === "leads") {
-                name = countIntent ? "get_metrics" : "search_leads";
-                if (countIntent) {
-                  const { data, error } = await supabase
-                    .from("leads")
-                    .select("status");
-                  if (error) {
-                    result = { error: error.message };
-                  } else {
-                    const counts: Record<string, number> = {};
-                    for (const row of data ?? []) {
-                      const status = (row as { status?: string }).status ?? "Unknown";
-                      counts[status] = (counts[status] ?? 0) + 1;
-                    }
-                    result = counts;
-                  }
-                } else {
-                  const { data, error } = await supabase
-                    .from("leads")
-                    .select("*")
-                    .limit(10)
-                    .order("created_at", { ascending: false });
-                  if (error) {
-                    result = { error: error.message };
-                  } else {
-                    result = data ?? [];
-                  }
-                }
-              } else if (matched === "deals") {
-                name = countIntent ? "get_metrics" : "search_deals";
-                if (countIntent) {
-                  const { data, error } = await supabase
-                    .from("deals")
-                    .select("status");
-                  if (error) {
-                    result = { error: error.message };
-                  } else {
-                    const counts: Record<string, number> = {};
-                    for (const row of data ?? []) {
-                      const status = (row as { status?: string }).status ?? "Unknown";
-                      counts[status] = (counts[status] ?? 0) + 1;
-                    }
-                    result = counts;
-                  }
-                } else {
-                  const { data, error } = await supabase
-                    .from("deals")
-                    .select(
-                      "id, title, value, stage, status, expected_close_date, created_at",
-                    )
-                    .limit(10)
-                    .order("created_at", { ascending: false });
-                  if (error) {
-                    result = { error: error.message };
-                  } else {
-                    result = data ?? [];
-                  }
-                }
-              } else if (matched === "contacts") {
-                name = "search_contacts";
-                if (countIntent) {
-                  const { count, error } = await supabase
-                    .from("contacts")
-                    .select("id", { count: "exact", head: true });
-                  if (error) {
-                    result = { error: error.message };
-                  } else {
-                    result = { count: count ?? 0 };
-                  }
-                } else {
-                  const { data, error } = await supabase
-                    .from("contacts")
-                    .select(
-                      "id, first_name, last_name, email, company, phone, created_at",
-                    )
-                    .limit(10)
-                    .order("created_at", { ascending: false });
-                  if (error) {
-                    result = { error: error.message };
-                  } else {
-                    result = data ?? [];
-                  }
-                }
-              } else if (matched === "companies") {
-                name = "search_companies";
-                if (countIntent) {
-                  const { count, error } = await supabase
-                    .from("companies")
-                    .select("id", { count: "exact", head: true });
-                  if (error) {
-                    result = { error: error.message };
-                  } else {
-                    result = { count: count ?? 0 };
-                  }
-                } else {
-                  const { data, error } = await supabase
-                    .from("companies")
-                    .select("id, name, industry, website, created_at")
-                    .limit(10)
-                    .order("created_at", { ascending: false });
-                  if (error) {
-                    result = { error: error.message };
-                  } else {
-                    result = data ?? [];
-                  }
-                }
-              } else if (matched === "tasks") {
-                name = "search_tasks";
-                const openOnly = isOpenTasksIntent(message);
-                const companyName = extractCompanyName(message);
-                let companyId = "";
-                if (companyName) {
-                  const { data: companies, error } = await supabase
-                    .from("companies")
-                    .select("id, name")
-                    .ilike("name", `%${companyName}%`)
-                    .order("created_at", { ascending: false })
-                    .limit(1);
-                  if (error) {
-                    result = { error: error.message };
-                  } else if (companies && companies.length > 0) {
-                    companyId = companies[0].id as string;
-                  } else {
-                    result = { error: "Company not found" };
-                  }
-                }
-
-                const hasError =
-                  typeof result === "object" &&
-                  result !== null &&
-                  "error" in result;
-                if (!hasError) {
-                  let dbQuery = supabase
-                    .from("tasks")
-                    .select(
-                      "id, title, status, due_date, created_at, company_id, contact_id, deal_id",
-                    )
-                    .limit(10)
-                    .order("created_at", { ascending: false });
-                  if (openOnly) {
-                    dbQuery = dbQuery.eq("status", "Pending");
-                  }
-                  if (companyId) {
-                    dbQuery = dbQuery.eq("company_id", companyId);
-                  }
-                  const { data, error } = await dbQuery;
-                  if (error) {
-                    result = { error: error.message };
-                  } else if (countIntent) {
-                    result = {
-                      count: (data ?? []).length,
-                      status: openOnly ? "Pending" : undefined,
-                      company: companyName || undefined,
-                    };
-                  } else {
-                    result = data ?? [];
-                  }
-                }
-              }
-            } catch (error) {
-              result = {
-                error: error instanceof Error ? error.message : "Unknown error",
-              };
-            }
-
-            if (name) {
-              contents.push({
-                role: "user",
-                parts: [
-                  {
-                    functionResponse: {
-                      name,
-                      response: { content: result },
-                    },
-                  },
-                ],
-              });
-              iteration += 1;
-              continue;
-            }
-          }
-        }
-
         finalText = getTextFromParts(parts);
         break;
       }
 
       for (const call of functionCalls) {
         const name = call.functionCall.name;
-        const args = call.functionCall.args ?? {};
-
+        const args = coerceArgs(call.functionCall.args);
         let result: unknown = [];
 
         try {
-          if (name === "search_leads") {
-            const query = String(args.query ?? "").trim();
-            const status = args.status ? String(args.status) : undefined;
-            let queryBuilder = supabase
-              .from("leads")
-              .select("*")
-              .limit(10)
-              .order("created_at", { ascending: false });
-
-            if (query) {
-              queryBuilder = queryBuilder.or(
-                `first_name.ilike.%${query}%,last_name.ilike.%${query}%,company.ilike.%${query}%`,
-              );
-            }
-            if (status) {
-              queryBuilder = queryBuilder.eq("status", status);
-            }
-
-            const { data, error } = await queryBuilder;
-            if (error) {
-              result = { error: error.message };
+          if (name === "crm_query") {
+            const table = String(args.table ?? "");
+            if (!ALLOWED_TABLES.includes(table)) {
+              result = { error: "Table not allowed" };
             } else {
-              result = data ?? [];
-            }
-          } else if (name === "search_deals") {
-            const minValue =
-              typeof args.min_value === "number"
-                ? args.min_value
-                : undefined;
-            const stage = args.stage ? String(args.stage) : undefined;
-            let dbQuery = supabase
-              .from("deals")
-              .select(
-                "id, title, value, stage, status, expected_close_date, created_at",
-              )
-              .order("created_at", { ascending: false });
-            if (typeof minValue === "number") {
-              dbQuery = dbQuery.gte("value", minValue);
-            }
-            if (stage) {
-              dbQuery = dbQuery.eq("stage", stage);
-            }
-            const { data, error } = await dbQuery.limit(20);
-            if (error) {
-              result = { error: error.message };
-            } else {
-              result = data ?? [];
-            }
-          } else if (name === "search_companies") {
-            const nameQuery = String(args.name_query ?? "").trim();
-            let dbQuery = supabase
-              .from("companies")
-              .select("id, name, industry, website, created_at")
-              .order("created_at", { ascending: false });
-            if (nameQuery) {
-              dbQuery = dbQuery.ilike("name", `%${nameQuery}%`);
-            }
-            const { data, error } = await dbQuery.limit(20);
-            if (error) {
-              result = { error: error.message };
-            } else {
-              result = data ?? [];
-            }
-          } else if (name === "search_contacts") {
-            const nameQuery = String(args.name_query ?? "").trim();
-            let dbQuery = supabase
-              .from("contacts")
-              .select(
-                "id, first_name, last_name, email, company, phone, created_at",
-              )
-              .order("created_at", { ascending: false });
-            if (nameQuery) {
-              dbQuery = dbQuery.or(
-                `first_name.ilike.%${nameQuery}%,last_name.ilike.%${nameQuery}%,email.ilike.%${nameQuery}%,company.ilike.%${nameQuery}%`,
-              );
-            }
-            const { data, error } = await dbQuery.limit(20);
-            if (error) {
-              result = { error: error.message };
-            } else {
-              result = data ?? [];
-            }
-          } else if (name === "search_tasks") {
-            const status = args.status
-              ? String(args.status)
-              : "Pending";
-            const titleQuery = args.title_query
-              ? String(args.title_query)
-              : undefined;
-            let dbQuery = supabase
-              .from("tasks")
-              .select(
-                "id, title, status, due_date, created_at, company_id, contact_id, deal_id",
-              )
-              .order("created_at", { ascending: false });
-            if (status) {
-              dbQuery = dbQuery.eq("status", status);
-            }
-            if (titleQuery) {
-              dbQuery = dbQuery.ilike("title", `%${titleQuery}%`);
-            }
-            const { data, error } = await dbQuery.limit(20);
-            if (error) {
-              result = { error: error.message };
-            } else {
-              result = data ?? [];
-            }
-          } else if (name === "get_metrics") {
-            const entity = String(args.entity ?? "");
-            if (!["leads", "deals", "tasks"].includes(entity)) {
-              result = { error: "entity must be leads, deals, or tasks" };
-            } else {
-              const { data, error } = await supabase
-                .from(entity)
-                .select("status");
-              if (error) {
-                result = { error: error.message };
+              const meta = tableMetadata[table];
+              if (!meta) {
+                result = { error: "Table metadata not found" };
               } else {
-                const counts: Record<string, number> = {};
-                for (const row of data ?? []) {
-                  const status = (row as { status?: string }).status ?? "Unknown";
-                  counts[status] = (counts[status] ?? 0) + 1;
+                const select = Array.isArray(args.select)
+                  ? (args.select as string[])
+                  : [];
+                const selectColumns = select.length ? select : ["*"];
+                const columnError = validateColumns(meta, selectColumns);
+                if (columnError) {
+                  result = { error: columnError };
+                } else {
+                  const aggregate = args.aggregate as
+                    | { type?: string; column?: string }
+                    | undefined;
+                  const isCount = aggregate?.type === "count";
+                  let query = supabase.from(table).select(
+                    isCount
+                      ? aggregate?.column ?? "id"
+                      : selectColumns.join(","),
+                    isCount ? { count: "exact", head: true } : undefined,
+                  );
+
+                  const filters = Array.isArray(args.filters)
+                    ? (args.filters as Array<{
+                        column?: string;
+                        op?: string;
+                        value?: unknown;
+                      }>)
+                    : [];
+
+                  for (const filter of filters) {
+                    const column = String(filter.column ?? "");
+                    const op = String(filter.op ?? "");
+                    if (!column || !op) continue;
+                    const colError = validateColumns(meta, [column]);
+                    if (colError) {
+                      result = { error: colError };
+                      break;
+                    }
+                    if (op === "eq") {
+                      query = query.eq(column, filter.value);
+                    } else if (op === "ilike") {
+                      query = query.ilike(column, String(filter.value ?? ""));
+                    } else if (op === "gte") {
+                      query = query.gte(column, filter.value as string | number);
+                    } else if (op === "lte") {
+                      query = query.lte(column, filter.value as string | number);
+                    } else if (op === "in") {
+                      if (Array.isArray(filter.value)) {
+                        query = query.in(column, filter.value);
+                      } else {
+                        result = { error: "Filter value must be array for in" };
+                        break;
+                      }
+                    } else {
+                      result = { error: "Invalid filter operation" };
+                      break;
+                    }
+                  }
+
+                  if (
+                    typeof result === "object" &&
+                    result !== null &&
+                    "error" in result
+                  ) {
+                    // keep error
+                  } else {
+                    if (meta.hasOrganizationId) {
+                      query = query.eq("organization_id", organizationId);
+                    }
+
+                    const orderBy = Array.isArray(args.order_by)
+                      ? (args.order_by as Array<{
+                          column?: string;
+                          ascending?: boolean;
+                        }>)
+                      : [];
+                    for (const order of orderBy) {
+                      const column = String(order.column ?? "");
+                      if (!column) continue;
+                      const colError = validateColumns(meta, [column]);
+                      if (colError) {
+                        result = { error: colError };
+                        break;
+                      }
+                      query = query.order(column, {
+                        ascending: order.ascending ?? true,
+                      });
+                    }
+
+                    if (
+                      typeof result === "object" &&
+                      result !== null &&
+                      "error" in result
+                    ) {
+                      // keep error
+                    } else if (!isCount) {
+                      const limit = getLimit(args.limit as number | undefined);
+                      const offset =
+                        typeof args.offset === "number"
+                          ? Math.max(0, Math.floor(args.offset))
+                          : undefined;
+                      if (offset !== undefined) {
+                        query = query.range(offset, offset + limit - 1);
+                      } else {
+                        query = query.limit(limit);
+                      }
+                    }
+
+                    const { data, error, count } = await query;
+                    if (error) {
+                      result = { error: error.message };
+                    } else if (isCount) {
+                      result = { count: count ?? 0 };
+                    } else {
+                      result = data ?? [];
+                    }
+                  }
                 }
-                result = counts;
+              }
+            }
+          } else if (name === "crm_insert") {
+            const table = String(args.table ?? "");
+            if (!INSERT_TABLES.includes(table)) {
+              result = { error: "Insert table not allowed" };
+            } else {
+              const meta = tableMetadata[table];
+              if (!meta) {
+                result = { error: "Table metadata not found" };
+              } else if (
+                typeof args.values !== "object" ||
+                args.values === null
+              ) {
+                result = { error: "Values must be an object" };
+              } else {
+                const values = { ...(args.values as Record<string, unknown>) };
+                const keys = Object.keys(values);
+                const columnError = validateColumns(meta, keys);
+                if (columnError) {
+                  result = { error: columnError };
+                } else {
+                  if (meta.columns.includes("organization_id")) {
+                    values.organization_id = organizationId;
+                  }
+                  if (meta.columns.includes("user_id")) {
+                    values.user_id = userData.user.id;
+                  }
+                  if (table === "tasks" && values.status === undefined) {
+                    values.status = "Pending";
+                  }
+                  const title = String(values.title ?? "").trim();
+                  if (!title) {
+                    result = { error: "title is required" };
+                  } else {
+                    const { data, error } = await supabase
+                      .from(table)
+                      .insert(values)
+                      .select("*");
+                    if (error) {
+                      result = { error: error.message };
+                    } else {
+                      result = data ?? [];
+                    }
+                  }
+                }
               }
             }
           } else {
@@ -666,7 +576,7 @@ serve(async (req) => {
 
     if (!finalText) {
       finalText =
-        "Desculpe, não consegui gerar uma resposta agora. Tente novamente.";
+        "Desculpe, nao consegui gerar uma resposta agora. Tente novamente.";
     }
 
     return new Response(JSON.stringify({ response: finalText }), {

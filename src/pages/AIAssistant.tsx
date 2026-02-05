@@ -8,6 +8,15 @@ export default function AIAssistant() {
         </p>
       </div>
 
-      <AIChat suggestions={["Show me my most promising leads", "Generate a follow-up email template", "Analyze my deal pipeline", "Summarize recent contact interactions", "What should I prioritize today?", "Create a sales report summary"]} />
+      <AIChat
+        suggestions={[
+          "Quantas tasks em aberto eu tenho?",
+          "Empresa Acme tem quantas tasks em aberto?",
+          "Mostre meus leads mais recentes",
+          "Quais sao meus contatos mais recentes?",
+          "Crie uma task para amanha",
+          "Crie uma nota sobre a negociacao com a Acme",
+        ]}
+      />
     </div>;
 }
