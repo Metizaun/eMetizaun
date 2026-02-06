@@ -13,6 +13,7 @@ export const useAI = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchMode, setSearchMode] = useState(false);
+  const historyLimit = 10;
 
   const sendMessage = async (message: string, useDeepSearch: boolean = false) => {
     if (!message.trim()) return;
@@ -24,6 +25,10 @@ export const useAI = () => {
       timestamp: new Date(),
     };
 
+    const history = messages
+      .slice(-historyLimit)
+      .map(({ role, content }) => ({ role, content }));
+
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
@@ -31,6 +36,7 @@ export const useAI = () => {
       const { data: functionData, error: functionError } = await supabase.functions.invoke('ai', {
         body: { 
           message,
+          history,
           deepSearch: useDeepSearch,
           model: useDeepSearch ? 'openai/gpt-5' : 'google/gemini-2.5-flash'
         }

@@ -160,6 +160,74 @@ export type Database = {
         }
         Relationships: []
       }
+      conversations: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string | null
+          title: string | null
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      database_metadata_cache: {
+        Row: {
+          cached_at: string
+          column_default: string | null
+          column_name: string
+          data_type: string
+          id: string
+          is_nullable: boolean
+          schema_name: string
+          table_name: string
+        }
+        Insert: {
+          cached_at?: string
+          column_default?: string | null
+          column_name: string
+          data_type: string
+          id?: string
+          is_nullable?: boolean
+          schema_name: string
+          table_name: string
+        }
+        Update: {
+          cached_at?: string
+          column_default?: string | null
+          column_name?: string
+          data_type?: string
+          id?: string
+          is_nullable?: boolean
+          schema_name?: string
+          table_name?: string
+        }
+        Relationships: []
+      }
       contacts: {
         Row: {
           anniversary: string | null
@@ -555,6 +623,91 @@ export type Database = {
           website?: string | null
         }
         Relationships: []
+      }
+      llm_settings: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          max_tokens: number
+          model: string
+          organization_id: string | null
+          provider: string
+          system_prompt: string | null
+          temperature: number
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_tokens?: number
+          model?: string
+          organization_id?: string | null
+          provider?: string
+          system_prompt?: string | null
+          temperature?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_tokens?: number
+          model?: string
+          organization_id?: string | null
+          provider?: string
+          system_prompt?: string | null
+          temperature?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "llm_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string
+          id: string
+          is_hidden: boolean
+          role: string
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string
+          id?: string
+          is_hidden?: boolean
+          role: string
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          is_hidden?: boolean
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notes: {
         Row: {
@@ -994,6 +1147,21 @@ export type Database = {
           p_user_id: string
         }
         Returns: string
+      }
+      execute_safe_query: {
+        Args: { query_text: string }
+        Returns: Json
+      }
+      get_database_metadata: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          schema_name: string
+          table_name: string
+          column_name: string
+          data_type: string
+          is_nullable: boolean
+          column_default: string | null
+        }[]
       }
       get_user_role: {
         Args: { org_id: string; user_uuid: string }

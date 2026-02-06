@@ -3,14 +3,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Switch } from '@/components/ui/switch';
-import { Send, Bot, User, Trash2, Sparkles, Search } from 'lucide-react';
-import { useAI, type ChatMessage } from '@/hooks/useAI';
+import { Send, Bot, User, Trash2, Sparkles } from 'lucide-react';
+import { useNaturalLanguageChat, type ChatMessage } from '@/hooks/useNaturalLanguageChat';
 import { cn } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
+import { DynamicDataGrid } from '@/components/DynamicDataGrid';
 
 interface AIChatProps {
   className?: string;
@@ -28,7 +28,7 @@ export function AIChat({
     "What are my top leads?"
   ]
 }: AIChatProps) {
-  const { messages, isLoading, sendMessage, clearMessages, searchMode, setSearchMode } = useAI();
+  const { messages, isLoading, isExecuting, streamingContent, queryResult, sendMessage, clearMessages } = useNaturalLanguageChat();
   const [input, setInput] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,7 +39,7 @@ export function AIChat({
 
     const messageToSend = input;
     setInput('');
-    await sendMessage(messageToSend, searchMode);
+    await sendMessage(messageToSend);
   };
 
   const handleSuggestionClick = (suggestion: string) => {
@@ -52,7 +52,7 @@ export function AIChat({
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, streamingContent, queryResult]);
 
   return (
     <Card className={cn("flex flex-col h-[600px]", className)}>
@@ -64,9 +64,7 @@ export function AIChat({
           </div>
           <div>
             <h3 className="font-semibold">AI Assistant</h3>
-            <p className="text-sm text-muted-foreground">
-              {searchMode ? "Enhanced Mode - GPT-5" : "Quick Mode - Gemini 2.5 Flash"}
-            </p>
+            <p className="text-sm text-muted-foreground">Respostas claras e objetivas</p>
           </div>
         </div>
         {messages.length > 0 && (
@@ -106,34 +104,36 @@ export function AIChat({
               </div>
             </div>
           ) : (
-            messages.map((message) => (
+            messages.filter((message) => !message.isHidden).map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))
           )}
+          {streamingContent && <MessageBubble message={{
+            id: 'streaming',
+            role: 'assistant',
+            content: streamingContent,
+            timestamp: new Date(),
+          }} />}
           {isLoading && <LoadingMessage />}
+          {isExecuting && !isLoading && (
+            <div className="text-sm text-muted-foreground">Processando resultados...</div>
+          )}
+          {queryResult?.data && queryResult.data.length > 0 && (
+            <div className="pt-2">
+              <DynamicDataGrid data={queryResult.data} />
+            </div>
+          )}
         </div>
       </ScrollArea>
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="p-4 border-t">
-        <div className="flex items-center gap-2 mb-2">
-          <Search className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm text-muted-foreground">Deep Search Mode</span>
-          <Switch
-            checked={searchMode}
-            onCheckedChange={setSearchMode}
-            disabled={isLoading}
-          />
-          <span className="text-xs text-muted-foreground">
-            {searchMode ? "Enhanced research & analysis" : "Quick responses"}
-          </span>
-        </div>
         <div className="flex gap-2">
           <Input
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={searchMode ? "Ask for in-depth analysis..." : placeholder}
+            placeholder={placeholder}
             disabled={isLoading}
             className="flex-1"
           />
@@ -152,6 +152,7 @@ export function AIChat({
 
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
+  const safeContent = cleanMessageContent(message.content);
 
   return (
     <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
@@ -168,7 +169,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           : "bg-muted text-foreground"
       )}>
         {isUser ? (
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <p className="whitespace-pre-wrap">{safeContent}</p>
         ) : (
           <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mt-2 prose-headings:mb-2 prose-p:my-3 prose-p:leading-relaxed">
             <ReactMarkdown
@@ -223,7 +224,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                 ),
               }}
             >
-              {message.content}
+              {safeContent}
             </ReactMarkdown>
           </div>
         )}
@@ -253,4 +254,13 @@ function LoadingMessage() {
       </div>
     </div>
   );
+}
+
+function cleanMessageContent(content: string) {
+  return content
+    .replace(/\[AUTO_EXECUTE\]/gi, '')
+    .replace(/```sql[\s\S]*?```/gi, '')
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
