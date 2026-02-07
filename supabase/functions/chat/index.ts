@@ -137,6 +137,8 @@ serve(async (req) => {
       "Quando o usuario pedir dados, gere a consulta para buscar os resultados.",
       "Use SEMPRE a tag [AUTO_EXECUTE] antes da consulta.",
       "Gere apenas UMA instrucao SQL por resposta.",
+      "A consulta deve estar sempre dentro de um unico bloco ```sql ... ```.",
+      "A resposta deve terminar imediatamente apos o bloco SQL.",
       "Nao use ponto e virgula.",
       "Para criacoes ou atualizacoes, use RETURNING *.",
       "Nunca exponha a consulta para o usuario.",
@@ -257,6 +259,9 @@ async function callGeminiOnce(
 
   console.log(`${LOG_PREFIX} llm_text`, {
     length: text.length,
+    hasAutoExecute: text.includes("[AUTO_EXECUTE]"),
+    hasSqlFence: /```sql/i.test(text),
+    preview: text.slice(0, 220),
   });
 
   return text || "Desculpe, nao consegui responder agora.";

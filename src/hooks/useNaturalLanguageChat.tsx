@@ -61,6 +61,11 @@ export function useNaturalLanguageChat() {
     let activeConversationId = conversationId;
 
     try {
+      const accessToken = await getLatestAccessToken();
+      if (!accessToken) {
+        throw new Error('auth_missing');
+      }
+
       if (!activeConversationId) {
         try {
           activeConversationId = await createConversation(currentOrganization.id, user.id, content);
@@ -93,10 +98,23 @@ export function useNaturalLanguageChat() {
         { role: 'user', content },
       ];
 
-      const response = await sendChatMessage(apiMessages, activeConversationId || undefined, session?.access_token);
+      const response = await sendChatMessage(apiMessages, activeConversationId || undefined, accessToken);
 
       if (!response.ok) {
-        throw new Error('Falha ao enviar mensagem');
+        const responseData = await safeReadJson(response);
+        const errorCode = String(responseData?.error || responseData?.message || responseData?.code || '');
+
+        console.error('[useNaturalLanguageChat] chat_request_failed', {
+          status: response.status,
+          errorCode,
+          hasResponseData: Boolean(responseData),
+        });
+
+        if (response.status === 401) {
+          throw new Error(errorCode || 'auth_invalid');
+        }
+
+        throw new Error(errorCode || 'chat_request_failed');
       }
 
       const contentType = response.headers.get('Content-Type') || '';
@@ -116,6 +134,11 @@ export function useNaturalLanguageChat() {
         setStreamingContent(cleanMessageContent(text));
       });
       const cleanedContent = cleanMessageContent(visibleContent);
+      console.log('[useNaturalLanguageChat] parsed_response', {
+        hasVisibleContent: Boolean(cleanedContent.trim()),
+        hasSql: Boolean(sql),
+        sqlPreview: sql ? sql.slice(0, 160) : null,
+      });
 
       if (cleanedContent.trim() || sql) {
         const assistantMessage: ChatMessage = {
@@ -149,7 +172,8 @@ export function useNaturalLanguageChat() {
 
       if (sql) {
         setIsExecuting(true);
-        const execResult = await executeQuery(sql, session?.access_token);
+        const execResult = await executeQuery(sql, accessToken);
+        console.log('[useNaturalLanguageChat] execute_result', execResult);
         setIsExecuting(false);
 
         if (execResult?.success) {
@@ -164,7 +188,14 @@ export function useNaturalLanguageChat() {
       }
     } catch (error) {
       console.error('Chat error:', error);
-      toast.error('Nao foi possivel concluir agora.');
+      const errorCode = error instanceof Error ? error.message : '';
+      if (isAuthErrorCode(errorCode)) {
+        await supabase.auth.signOut({ scope: 'local' });
+        clearLocalAuthArtifacts();
+        toast.error('Sessao expirada ou invalida. Entre novamente para continuar.');
+      } else {
+        toast.error('Nao foi possivel concluir agora.');
+      }
     } finally {
       setIsLoading(false);
       setStreamingContent('');
@@ -225,53 +256,200 @@ async function createMessage(conversationId: string, role: string, content: stri
     });
 }
 
+function getSupabaseFunctionConfig() {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('config_missing');
+  }
+
+  return { supabaseUrl, supabaseKey };
+}
+
+async function getLatestAccessToken() {
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) {
+      console.error('[useNaturalLanguageChat] getSession error:', error);
+      return undefined;
+    }
+
+    const candidateToken = normalizeAccessToken(data.session?.access_token);
+    if (!candidateToken) {
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      const refreshedToken = normalizeAccessToken(refreshData.session?.access_token);
+      if (refreshError || !refreshedToken || !isLikelyJwt(refreshedToken)) {
+        return undefined;
+      }
+      return refreshedToken;
+    }
+
+    if (!isLikelyJwt(candidateToken)) {
+      console.warn('[useNaturalLanguageChat] candidate access token is not a JWT, trying refreshSession');
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      const refreshedToken = normalizeAccessToken(refreshData.session?.access_token);
+      if (refreshError || !refreshedToken || !isLikelyJwt(refreshedToken)) {
+        return undefined;
+      }
+      return refreshedToken;
+    }
+
+    // Validate token before calling protected Edge Functions.
+    const { data: userData, error: userError } = await supabase.auth.getUser(candidateToken);
+    if (!userError && userData?.user) {
+      return candidateToken;
+    }
+
+    console.warn('[useNaturalLanguageChat] token validation failed, trying refreshSession', {
+      userErrorMessage: userError?.message,
+    });
+
+    const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+    const refreshedToken = normalizeAccessToken(refreshData.session?.access_token);
+    if (refreshError || !refreshedToken) {
+      return undefined;
+    }
+
+    const { data: refreshedUserData, error: refreshedUserError } = await supabase.auth.getUser(refreshedToken);
+    if (refreshedUserError || !refreshedUserData?.user) {
+      return undefined;
+    }
+
+    return refreshedToken;
+  } catch (error) {
+    console.error('[useNaturalLanguageChat] getSession exception:', error);
+    return undefined;
+  }
+}
+
+async function sendAuthenticatedFunctionRequest(
+  functionName: string,
+  payload: Record<string, unknown>,
+  accessToken?: string,
+) {
+  const { supabaseUrl, supabaseKey } = getSupabaseFunctionConfig();
+  const resolvedAccessToken = normalizeAccessToken(accessToken || (await getLatestAccessToken()));
+
+  if (!resolvedAccessToken) {
+    throw new Error('auth_missing');
+  }
+
+  if (!isLikelyJwt(resolvedAccessToken)) {
+    throw new Error('auth_invalid');
+  }
+
+  const tokenDebug = getTokenDebug(resolvedAccessToken, supabaseUrl);
+  console.log(`[useNaturalLanguageChat] ${functionName} token_debug`, tokenDebug);
+  if (tokenDebug.projectRefMismatch) {
+    console.error('[useNaturalLanguageChat] token project mismatch', tokenDebug);
+    throw new Error('auth_project_mismatch');
+  }
+  if (tokenDebug.expired) {
+    throw new Error('auth_invalid');
+  }
+
+  const sendRequest = (token: string) =>
+    fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseKey,
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+  const response = await sendRequest(resolvedAccessToken);
+  if (response.status !== 401) {
+    return response;
+  }
+
+  const firstAttemptBody = await safeReadJson(response);
+  console.warn(`[useNaturalLanguageChat] ${functionName} returned 401, trying session refresh`);
+  if (firstAttemptBody) {
+    console.warn(`[useNaturalLanguageChat] ${functionName} first 401 body`, firstAttemptBody);
+  }
+
+  const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+  const refreshedToken = normalizeAccessToken(refreshData.session?.access_token);
+
+  if (refreshError || !refreshedToken) {
+    return response;
+  }
+
+  const retried = await sendRequest(refreshedToken);
+  if (retried.status === 401) {
+    const secondAttemptBody = await safeReadJson(retried);
+    if (secondAttemptBody) {
+      console.warn(`[useNaturalLanguageChat] ${functionName} second 401 body`, secondAttemptBody);
+    }
+  }
+
+  return retried;
+}
+
 async function sendChatMessage(
   messages: { role: string; content: string }[],
   conversationId?: string,
   accessToken?: string,
 ) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error('Configuracao ausente');
-  }
-
-  return fetch(`${supabaseUrl}/functions/v1/chat`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: supabaseKey,
-      Authorization: `Bearer ${accessToken || supabaseKey}`,
-    },
-    body: JSON.stringify({ messages, conversationId }),
-  });
+  return sendAuthenticatedFunctionRequest('chat', { messages, conversationId }, accessToken);
 }
 
 async function executeQuery(query: string, accessToken?: string) {
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-  const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-  if (!supabaseUrl || !supabaseKey) {
+  try {
+    getSupabaseFunctionConfig();
+  } catch {
     return { success: false, code: 'config_missing' };
   }
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/execute-query`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: supabaseKey,
-      Authorization: `Bearer ${accessToken || supabaseKey}`,
-    },
-    body: JSON.stringify({ query }),
-  });
+  const normalizedQuery = normalizeSqlForExecution(query);
+  if (!normalizedQuery) {
+    return { success: false, code: 'operation_not_allowed' };
+  }
 
-  const result = await response.json();
+  let response: Response;
+  try {
+    response = await sendAuthenticatedFunctionRequest('execute-query', { query: normalizedQuery }, accessToken);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'auth_missing') {
+      return { success: false, code: 'auth_missing' };
+    }
+    return { success: false, code: 'internal_error' };
+  }
+
+  const result = await safeReadJson(response);
   if (!response.ok) {
-    return { success: false, code: result?.code };
+    if (response.status === 401) {
+      return { success: false, code: 'auth_invalid' };
+    }
+    return { success: false, code: result?.code || result?.error || result?.message || 'internal_error' };
+  }
+
+  if (!result) {
+    return { success: false, code: 'internal_error' };
   }
 
   return result;
+}
+
+function normalizeSqlForExecution(query: string) {
+  if (!query) return '';
+  let normalized = query
+    .replace(/\[AUTO_EXECUTE\]/gi, '')
+    .replace(/```sql/gi, '')
+    .replace(/```/g, '')
+    .trim();
+
+  const firstKeywordIndex = normalized.search(/\b(SELECT|WITH|INSERT\s+INTO|UPDATE)\b/i);
+  if (firstKeywordIndex > 0) {
+    normalized = normalized.slice(firstKeywordIndex).trim();
+  }
+
+  normalized = normalized.replace(/;\s*$/g, '').trim();
+
+  return normalized;
 }
 
 async function readStream(
@@ -381,13 +559,21 @@ function extractSqlFromFenced(content: string) {
 async function readNonStreamResponse(response: Response) {
   try {
     const data = await response.json();
-    if (data?.error) {
-      return mapErrorToMessage(data?.code) || 'Nao foi possivel concluir agora.';
+    if (data?.error || data?.message || data?.code) {
+      return mapErrorToMessage(data?.error || data?.message || data?.code) || 'Nao foi possivel concluir agora.';
     }
   } catch {
     // ignore
   }
   return 'Nao foi possivel concluir agora.';
+}
+
+async function safeReadJson(response: Response): Promise<Record<string, any> | null> {
+  try {
+    return await response.clone().json();
+  } catch {
+    return null;
+  }
 }
 
 function mapErrorToMessage(code?: string) {
@@ -407,7 +593,118 @@ function mapErrorToMessage(code?: string) {
       return 'Nao foi possivel concluir esta solicitacao.';
     case 'config_missing':
       return 'Nao foi possivel concluir agora.';
+    case 'auth_missing':
+    case 'auth_invalid':
+    case 'auth_project_mismatch':
+    case 'not_authenticated':
+    case 'Invalid JWT':
+    case 'JWT expired':
+    case 'Missing authorization header':
+    case 'Invalid API key':
+      return 'Sessao invalida. Entre novamente para continuar.';
     default:
       return 'Nao foi possivel concluir agora.';
+  }
+}
+
+function isAuthErrorCode(code?: string) {
+  if (!code) return false;
+  const normalized = code.toLowerCase();
+  return (
+    normalized === 'auth_missing' ||
+    normalized === 'auth_invalid' ||
+    normalized === 'auth_project_mismatch' ||
+    normalized === 'not_authenticated' ||
+    normalized === '401' ||
+    normalized.includes('invalid jwt') ||
+    normalized.includes('jwt expired') ||
+    normalized.includes('invalid api key') ||
+    normalized.includes('authorization')
+  );
+}
+
+function normalizeAccessToken(token?: string) {
+  if (!token) return undefined;
+  let normalized = token.trim();
+  if (!normalized) return undefined;
+
+  if (normalized.toLowerCase().startsWith('bearer ')) {
+    normalized = normalized.slice(7).trim();
+  }
+
+  if (
+    (normalized.startsWith('"') && normalized.endsWith('"')) ||
+    (normalized.startsWith("'") && normalized.endsWith("'"))
+  ) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  return normalized || undefined;
+}
+
+function isLikelyJwt(token?: string) {
+  if (!token) return false;
+  const parts = token.split('.');
+  return parts.length === 3 && parts.every((part) => part.length > 0);
+}
+
+function getTokenDebug(token: string, supabaseUrl: string) {
+  const payload = decodeJwtPayload(token);
+  const expectedProjectRef = extractProjectRef(supabaseUrl);
+  const payloadProjectRef = extractPayloadProjectRef(payload);
+  const exp = typeof payload?.exp === 'number' ? payload.exp : null;
+  const nowInSeconds = Math.floor(Date.now() / 1000);
+  const expired = typeof exp === 'number' ? exp <= nowInSeconds : false;
+  const projectRefMismatch = Boolean(
+    expectedProjectRef && payloadProjectRef && payloadProjectRef !== expectedProjectRef,
+  );
+
+  return {
+    expectedProjectRef,
+    payloadProjectRef,
+    projectRefMismatch,
+    hasExp: typeof exp === 'number',
+    expired,
+  };
+}
+
+function decodeJwtPayload(token: string): Record<string, any> | null {
+  try {
+    const [, payloadPart] = token.split('.');
+    if (!payloadPart) return null;
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const decoded = atob(padded);
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
+
+function extractProjectRef(url: string) {
+  const match = url.match(/^https:\/\/([a-z0-9-]+)\.supabase\.co/i);
+  return match?.[1] || null;
+}
+
+function extractPayloadProjectRef(payload: Record<string, any> | null) {
+  if (!payload) return null;
+  if (typeof payload.ref === 'string') {
+    return payload.ref;
+  }
+  const issuer = String(payload.iss || '');
+  const match = issuer.match(/^https:\/\/([a-z0-9-]+)\.supabase\.co\/auth\/v1/i);
+  return match?.[1] || null;
+}
+
+function clearLocalAuthArtifacts() {
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+    const projectRef = supabaseUrl ? extractProjectRef(supabaseUrl) : null;
+    if (projectRef) {
+      localStorage.removeItem(`sb-${projectRef}-auth-token`);
+    }
+    localStorage.removeItem('supabase.auth.token');
+  } catch {
+    // ignore
   }
 }

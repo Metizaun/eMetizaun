@@ -21,6 +21,40 @@ const FORBIDDEN_KEYWORDS = [
 
 const ALLOWED_WRITE_TABLES = ["leads", "deals", "tasks", "notes"];
 
+function sanitizeQuery(rawQuery: string): { query?: string; errorCode?: string } {
+  let query = rawQuery.trim();
+  query = query.replace(/\[AUTO_EXECUTE\]/gi, "").trim();
+
+  const fencedSql = query.match(/```sql\s*([\s\S]*?)```/i);
+  if (fencedSql?.[1]) {
+    query = fencedSql[1].trim();
+  } else {
+    const fencedAny = query.match(/```\s*([\s\S]*?)```/);
+    if (fencedAny?.[1]) {
+      query = fencedAny[1].trim();
+    }
+  }
+
+  query = query.replace(/^sql\s*/i, "").trim();
+
+  const firstSqlKeywordIndex = query.search(/\b(SELECT|WITH|INSERT\s+INTO|UPDATE)\b/i);
+  if (firstSqlKeywordIndex > 0) {
+    query = query.slice(firstSqlKeywordIndex).trim();
+  }
+
+  query = query.replace(/;\s*$/g, "").trim();
+
+  if (!query) {
+    return { errorCode: "missing_query" };
+  }
+
+  if (query.includes(";")) {
+    return { errorCode: "multi_statement_not_allowed" };
+  }
+
+  return { query };
+}
+
 function validateQuery(query: string): { valid: boolean; errorCode?: string } {
   const upper = query.toUpperCase().trim();
 
@@ -74,16 +108,36 @@ serve(async (req) => {
   }
 
   try {
-    const { query } = await req.json();
+    const { query: rawQuery } = await req.json();
+    console.log("[execute-query] request", {
+      hasQuery: typeof rawQuery === "string",
+      queryPreview: typeof rawQuery === "string" ? rawQuery.slice(0, 180) : null,
+      hasAuthorization: Boolean(req.headers.get("Authorization")),
+      hasApiKeyHeader: Boolean(req.headers.get("apikey")),
+    });
 
-    if (!query || typeof query !== "string") {
+    if (!rawQuery || typeof rawQuery !== "string") {
       return new Response(JSON.stringify({ success: false, code: "missing_query" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    const sanitized = sanitizeQuery(rawQuery);
+    if (!sanitized.query) {
+      return new Response(
+        JSON.stringify({ success: false, code: sanitized.errorCode || "validation_failed" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const query = sanitized.query;
+    console.log("[execute-query] normalized_query", {
+      queryPreview: query.slice(0, 180),
+    });
+
     const validation = validateQuery(query);
+    console.log("[execute-query] validation", validation);
     if (!validation.valid) {
       return new Response(
         JSON.stringify({ success: false, code: validation.errorCode || "validation_failed" }),
@@ -106,6 +160,27 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user) {
+      return new Response(JSON.stringify({ success: false, code: "not_authenticated" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { data: roles } = await supabase
+      .from("user_roles")
+      .select("organization_id")
+      .eq("user_id", userData.user.id)
+      .limit(1);
+
+    if (!roles?.length) {
+      return new Response(JSON.stringify({ success: false, code: "forbidden_operation" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { data, error } = await supabase.rpc("execute_safe_query", {
       query_text: query,
     });
@@ -127,6 +202,11 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
+
+    console.log("[execute-query] rpc_success", {
+      operation: data?.operation ?? null,
+      rowCount: data?.rowCount ?? null,
+    });
 
     return new Response(
       JSON.stringify({
