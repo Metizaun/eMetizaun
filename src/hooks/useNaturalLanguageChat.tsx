@@ -1,4 +1,4 @@
-﻿import { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useOrganizationContext } from '@/hooks/useOrganizationContext';
@@ -404,43 +404,87 @@ async function executeQuery(query: string, accessToken?: string) {
     return { success: false, code: 'config_missing' };
   }
 
-  const normalizedQuery = normalizeSqlForExecution(query);
-  if (!normalizedQuery) {
+  console.log('[useNaturalLanguageChat] sql_before_execute', {
+    preview: query ? query.slice(0, 160) : null,
+  });
+
+  const prepared = prepareExecutableSql(query);
+  console.log('[useNaturalLanguageChat] sql_after_prepare', {
+    preparedSqlPreview: prepared.query ? prepared.query.slice(0, 160) : null,
+    startsWithKeyword: prepared.startsWithKeyword,
+  });
+
+  if (!prepared.query) {
     return { success: false, code: 'operation_not_allowed' };
   }
 
-  let response: Response;
-  try {
-    response = await sendAuthenticatedFunctionRequest('execute-query', { query: normalizedQuery }, accessToken);
-  } catch (error) {
-    if (error instanceof Error && error.message === 'auth_missing') {
-      return { success: false, code: 'auth_missing' };
+  let queryToExecute = prepared.query;
+  let executionRetryCount = 0;
+
+  while (true) {
+    let response: Response;
+    try {
+      response = await sendAuthenticatedFunctionRequest(
+        'execute-query',
+        { query: queryToExecute, executionRetryCount },
+        accessToken,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === 'auth_missing') {
+        return { success: false, code: 'auth_missing' };
+      }
+      return { success: false, code: 'internal_error' };
     }
-    return { success: false, code: 'internal_error' };
-  }
 
-  const result = await safeReadJson(response);
-  if (!response.ok) {
-    if (response.status === 401) {
-      return { success: false, code: 'auth_invalid' };
+    const result = await safeReadJson(response);
+    if (!response.ok) {
+      const code = String(result?.code || result?.error || result?.message || 'internal_error');
+
+      if (response.status === 400 && code === 'operation_not_allowed' && executionRetryCount === 0) {
+        const repaired = repairSelectQueryForExecution(queryToExecute);
+        if (repaired && repaired !== queryToExecute) {
+          executionRetryCount = 1;
+          queryToExecute = repaired;
+          console.warn('[useNaturalLanguageChat] execute_retry_applied', {
+            executionRetryCount,
+            repairedSqlPreview: repaired.slice(0, 160),
+          });
+          continue;
+        }
+      }
+
+      if (response.status === 401) {
+        return { success: false, code: 'auth_invalid', stage: result?.stage, retryApplied: result?.retryApplied };
+      }
+
+      return { success: false, code, stage: result?.stage, retryApplied: result?.retryApplied };
     }
-    return { success: false, code: result?.code || result?.error || result?.message || 'internal_error' };
-  }
 
-  if (!result) {
-    return { success: false, code: 'internal_error' };
-  }
+    if (!result) {
+      return { success: false, code: 'internal_error' };
+    }
 
-  return result;
+    return result;
+  }
 }
 
-function normalizeSqlForExecution(query: string) {
-  if (!query) return '';
-  let normalized = query
-    .replace(/\[AUTO_EXECUTE\]/gi, '')
-    .replace(/```sql/gi, '')
-    .replace(/```/g, '')
-    .trim();
+function prepareExecutableSql(query: string) {
+  if (!query) return { query: '', startsWithKeyword: false };
+
+  let normalized = query.trim();
+  normalized = normalized.replace(/\[AUTO_EXECUTE\]/gi, '').trim();
+
+  const fencedSql = normalized.match(/```sql\s*([\s\S]*?)```/i);
+  if (fencedSql?.[1]) {
+    normalized = fencedSql[1].trim();
+  } else {
+    const fencedAny = normalized.match(/```\s*([\s\S]*?)```/);
+    if (fencedAny?.[1]) {
+      normalized = fencedAny[1].trim();
+    }
+  }
+
+  normalized = normalized.replace(/^sql\s*/i, '').trim();
 
   const firstKeywordIndex = normalized.search(/\b(SELECT|WITH|INSERT\s+INTO|UPDATE)\b/i);
   if (firstKeywordIndex > 0) {
@@ -449,7 +493,20 @@ function normalizeSqlForExecution(query: string) {
 
   normalized = normalized.replace(/;\s*$/g, '').trim();
 
-  return normalized;
+  return {
+    query: normalized,
+    startsWithKeyword: /^(SELECT|WITH|INSERT\s+INTO|UPDATE)\b/i.test(normalized),
+  };
+}
+
+function repairSelectQueryForExecution(query: string) {
+  const trimmed = query.trim();
+  if (!trimmed) return '';
+  if (trimmed.includes(';')) return '';
+  if (!/^\s*FROM\b/i.test(trimmed)) return '';
+  if (/\b(DROP|TRUNCATE|ALTER|GRANT|REVOKE|DELETE|EXEC|EXECUTE)\b/i.test(trimmed)) return '';
+
+  return `SELECT * ${trimmed.replace(/^\s*FROM\b/i, 'FROM').trim()}`;
 }
 
 async function readStream(
@@ -708,3 +765,4 @@ function clearLocalAuthArtifacts() {
     // ignore
   }
 }
+
