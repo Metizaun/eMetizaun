@@ -175,7 +175,7 @@ export function ChatThread({
   }
 
   return (
-    <div className="flex h-full flex-col bg-card">
+    <div className="flex h-full min-h-0 flex-col bg-card">
       <header className="border-b bg-background px-4 py-3 text-foreground">
         <div className="flex items-center gap-3">
           <Avatar className="h-8 w-8 border border-border">
@@ -194,7 +194,7 @@ export function ChatThread({
         </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto bg-background" ref={containerRef}>
+      <div className="flex-1 min-h-0 overflow-y-auto bg-background" ref={containerRef}>
         <div className="space-y-4 p-4">
           {loading && <p className="text-xs text-muted-foreground">Loading messages...</p>}
 

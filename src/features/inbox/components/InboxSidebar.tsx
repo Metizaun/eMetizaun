@@ -73,7 +73,7 @@ export function InboxSidebar({
   );
 
   return (
-    <aside className="inbox-sidebar h-full overflow-y-auto border-r border-white/10 px-3 py-4">
+    <aside className="inbox-sidebar h-full min-h-0 overflow-y-auto border-r border-white/10 px-3 py-4">
       <div className="mb-6">
         <h1 className="text-xl font-medium text-white">Inbox</h1>
         <p className="text-xs font-medium text-white/70">Conversations</p>

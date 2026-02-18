@@ -81,12 +81,12 @@ export function ConversationList({
   onToggleArchive,
 }: ConversationListProps) {
   return (
-    <div className="h-full border-r bg-muted/30">
+    <div className="h-full min-h-0 border-r bg-muted/30">
       <div className="border-b px-4 py-3">
         <h2 className="text-lg font-semibold">Conversations</h2>
       </div>
 
-      <div className="h-[calc(100%-57px)] overflow-y-auto">
+      <div className="h-[calc(100%-57px)] min-h-0 overflow-y-auto">
         {loading && (
           <div className="px-4 py-6 text-sm text-muted-foreground">Loading conversations...</div>
         )}

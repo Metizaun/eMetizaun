@@ -123,7 +123,7 @@ export default function Inbox() {
 
   return (
     <div className="inbox-theme h-full min-h-0">
-      <ResizablePanelGroup direction="horizontal" className="h-full rounded-lg border bg-muted/30">
+      <ResizablePanelGroup direction="horizontal" className="h-full w-full min-h-0 rounded-lg border bg-muted/30">
         <ResizablePanel defaultSize={20} minSize={16}>
           <InboxSidebar
             activeFilter={activeFilter}

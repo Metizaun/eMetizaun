@@ -1,20 +1,27 @@
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { TopHeader } from "./TopHeader";
+import { cn } from "@/lib/utils";
 
 interface MainLayoutProps {
   children: React.ReactNode;
+  fluid?: boolean;
 }
 
-export function MainLayout({ children }: MainLayoutProps) {
+export function MainLayout({ children, fluid = false }: MainLayoutProps) {
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div className="flex h-svh w-full overflow-hidden">
         <AppSidebar />
-        <SidebarInset className="overflow-hidden">
+        <SidebarInset className="min-h-0 overflow-hidden">
           <TopHeader />
-          <main className="flex-1 bg-background overflow-hidden">
-            <div className="container mx-auto px-6 py-4 h-full overflow-hidden">
+          <main className="flex-1 min-h-0 bg-background overflow-hidden">
+            <div
+              className={cn(
+                "h-full min-h-0 overflow-hidden px-6 py-4",
+                fluid ? "w-full" : "container mx-auto"
+              )}
+            >
               {children}
             </div>
           </main>
