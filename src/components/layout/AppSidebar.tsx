@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Home, Users, Building2, Target, CheckSquare, BarChart3, Settings, ChevronDown, ChevronRight, UserPlus, Bell, StickyNote, Sparkles, Handshake, Search, Keyboard, Database, List, PenTool } from "lucide-react";
+import { Home, Users, Building2, Target, CheckSquare, BarChart3, Settings, ChevronDown, ChevronRight, UserPlus, Bell, StickyNote, Sparkles, Handshake, Search, Keyboard, Database, List, PenTool, CalendarDays, Inbox } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, useSidebar, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,10 @@ const mainNavigationItems = [{
   url: "/dashboard"
 }];
 const quickActionItems = [{
+  title: "Inbox",
+  icon: Inbox,
+  url: "/inbox"
+}, {
   title: "Notifications",
   icon: Bell,
   url: "/notifications"
@@ -22,6 +26,10 @@ const quickActionItems = [{
   title: "Tasks",
   icon: CheckSquare,
   url: "/tasks"
+}, {
+  title: "Calendar",
+  icon: CalendarDays,
+  url: "/calendar"
 }, {
   title: "Composer",
   icon: PenTool,

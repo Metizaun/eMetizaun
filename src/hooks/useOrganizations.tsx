@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 export interface Organization {
   id: string;
   name: string;
+  timezone: string;
   created_at: string;
   updated_at: string;
 }
@@ -29,11 +30,38 @@ export interface OrganizationMember {
   };
 }
 
-export type OrganizationInsert = Omit<Organization, 'id' | 'created_at' | 'updated_at'>;
+export type OrganizationInsert = {
+  name: string;
+  timezone?: string;
+};
 export type UserRoleInsert = Omit<UserRole, 'id' | 'created_at' | 'updated_at'>;
 
 export function useOrganizations() {
   const { user } = useAuth();
+
+  const getFunctionAuthHeaders = async (): Promise<Record<string, string>> => {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      throw new Error('Failed to get session');
+    }
+
+    let accessToken = sessionData.session?.access_token;
+    if (!accessToken) {
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        throw new Error('Missing authorization header');
+      }
+      accessToken = refreshData.session?.access_token;
+    }
+
+    if (!accessToken) {
+      throw new Error('Missing authorization header');
+    }
+
+    return {
+      Authorization: `Bearer ${accessToken}`
+    };
+  };
 
   const fetchUserOrganizations = async (): Promise<Organization[]> => {
     if (!user) throw new Error('User not authenticated');
@@ -104,19 +132,41 @@ export function useOrganizations() {
     const organizationIds = userRoles.map(ur => ur.organization_id);
     console.log('useOrganizations: Fetching organizations with IDs:', organizationIds);
 
-    const { data: organizations, error: orgsError } = await supabase
+    const { data: organizationsWithTimezone, error: orgsError } = await supabase
       .from('organizations')
-      .select('id, name, created_at, updated_at')
+      .select('id, name, timezone, created_at, updated_at')
       .in('id', organizationIds);
 
-    if (orgsError) {
-      console.error('useOrganizations: Error fetching organizations:', orgsError);
-      throw orgsError;
+    if (!orgsError) {
+      console.log('useOrganizations: Organizations found:', organizationsWithTimezone);
+      return organizationsWithTimezone || [];
     }
 
-    console.log('useOrganizations: Organizations found:', organizations);
+    // Backward-compatible fallback when the timezone migration is not applied yet.
+    if (orgsError.code === '42703') {
+      console.warn('useOrganizations: organizations.timezone column not found, using fallback query.');
 
-    return organizations || [];
+      const { data: organizationsLegacy, error: legacyError } = await supabase
+        .from('organizations')
+        .select('id, name, created_at, updated_at')
+        .in('id', organizationIds);
+
+      if (legacyError) {
+        console.error('useOrganizations: Fallback organizations query failed:', legacyError);
+        throw legacyError;
+      }
+
+      const normalizedOrganizations: Organization[] = (organizationsLegacy || []).map((organization) => ({
+        ...organization,
+        timezone: 'America/Sao_Paulo',
+      }));
+
+      console.log('useOrganizations: Organizations found with fallback:', normalizedOrganizations);
+      return normalizedOrganizations;
+    }
+
+    console.error('useOrganizations: Error fetching organizations:', orgsError);
+    throw orgsError;
   };
 
   const fetchOrganizationMembers = async (organizationId: string): Promise<OrganizationMember[]> => {
@@ -204,7 +254,9 @@ export function useOrganizations() {
   };
 
   const createUser = async (organizationId: string, email: string, password: string, displayName: string, role: UserRole['role']): Promise<void> => {
+    const headers = await getFunctionAuthHeaders();
     const { data, error } = await supabase.functions.invoke('create-user', {
+      headers,
       body: {
         email,
         password,
@@ -228,7 +280,9 @@ export function useOrganizations() {
   };
 
   const removeUser = async (userRoleId: string): Promise<void> => {
+    const headers = await getFunctionAuthHeaders();
     const { data, error } = await supabase.functions.invoke('delete-user', {
+      headers,
       body: {
         userRoleId
       }

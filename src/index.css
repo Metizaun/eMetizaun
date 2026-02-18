@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -29,6 +31,15 @@
     --muted-foreground: 0 0% 46%;
     --accent: 0 0% 9%;
     --accent-foreground: 0 0% 98%;
+
+    /* Inbox Accent Tokens */
+    --accent-orange: #081852;
+    --accent-orange-hover: #0A1E66;
+    --accent-orange-light: rgb(8 24 82 / 10%);
+    --status-unread: #FF4500;
+    --inbox-surface: hsl(var(--muted));
+    --inbox-sidebar-bg: #292D36;
+    --inbox-sidebar-fg: #FFFFFF;
     
     /* Status Colors */
     --destructive: 0 84% 60%;
@@ -55,7 +66,7 @@
     --sidebar-accent-foreground: 0 0% 45%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 0 0% 9%;
-    --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     --radius: 0.625rem;
@@ -111,7 +122,7 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 210 40% 98%;
-    --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     --radius: 0.625rem;
@@ -187,6 +198,21 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
   }
+
+  .inbox-theme {
+    caret-color: var(--accent-orange);
+  }
+
+  .inbox-theme ::selection {
+    background: var(--accent-orange-light);
+    color: inherit;
+  }
+
+  .inbox-sidebar {
+    background: var(--inbox-sidebar-bg);
+    color: var(--inbox-sidebar-fg);
+  }
+
 }
 
 /* Custom Utility Classes for CRM Template */
