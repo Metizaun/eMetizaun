@@ -13,13 +13,15 @@ export function MainLayout({ children, fluid = false }: MainLayoutProps) {
     <SidebarProvider>
       <div className="flex h-svh w-full overflow-hidden">
         <AppSidebar />
-        <SidebarInset className="min-h-0 overflow-hidden">
+        <SidebarInset className={cn("min-h-0", fluid && "overflow-hidden")}>
           <TopHeader />
-          <main className="flex-1 min-h-0 bg-background overflow-hidden">
+          <main className={cn("flex-1 min-h-0 bg-background", fluid ? "overflow-hidden" : "overflow-y-auto")}>
             <div
               className={cn(
-                "h-full min-h-0 overflow-hidden px-6 py-4",
-                fluid ? "w-full" : "container mx-auto"
+                "px-6 py-4",
+                fluid
+                  ? "h-full min-h-0 w-full overflow-hidden"
+                  : "container mx-auto min-h-full"
               )}
             >
               {children}
