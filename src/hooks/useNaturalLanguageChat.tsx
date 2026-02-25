@@ -10,6 +10,7 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   isHidden?: boolean;
+  queryResult?: QueryResult | null;
 }
 
 export interface QueryResult {
@@ -28,13 +29,11 @@ export function useNaturalLanguageChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
-  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
     setStreamingContent('');
-    setQueryResult(null);
     setConversationId(null);
   }, []);
 
@@ -56,9 +55,9 @@ export function useNaturalLanguageChat() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setStreamingContent('');
-    setQueryResult(null);
 
     let activeConversationId = conversationId;
+    let assistantMessageId: string | null = null;
 
     try {
       const accessToken = await getLatestAccessToken();
@@ -147,6 +146,7 @@ export function useNaturalLanguageChat() {
           content: cleanedContent.trim() || 'Certo, aqui estao os resultados.',
           timestamp: new Date(),
         };
+        assistantMessageId = assistantMessage.id;
         setMessages((prev) => [...prev, assistantMessage]);
 
         if (activeConversationId) {
@@ -177,7 +177,15 @@ export function useNaturalLanguageChat() {
         setIsExecuting(false);
 
         if (execResult?.success) {
-          setQueryResult(execResult.data || null);
+          if (assistantMessageId && execResult.data) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, queryResult: execResult.data as QueryResult }
+                  : message
+              )
+            );
+          }
           if (execResult.data?.data?.length) {
             toast.success('Acao concluida com sucesso.');
           }
@@ -208,7 +216,6 @@ export function useNaturalLanguageChat() {
     isLoading,
     isExecuting,
     streamingContent,
-    queryResult,
     sendMessage,
     clearMessages,
   };
