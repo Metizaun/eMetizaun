@@ -10,6 +10,7 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   isHidden?: boolean;
+  queryResult?: QueryResult | null;
 }
 
 export interface QueryResult {
@@ -19,6 +20,8 @@ export interface QueryResult {
 }
 
 const AUTO_EXECUTE_TAG = '[AUTO_EXECUTE]';
+const MAX_VISIBLE_COLUMNS = 8;
+const MAX_VISIBLE_ROWS = 20;
 
 export function useNaturalLanguageChat() {
   const { user, session } = useAuth();
@@ -28,13 +31,11 @@ export function useNaturalLanguageChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
-  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
     setStreamingContent('');
-    setQueryResult(null);
     setConversationId(null);
   }, []);
 
@@ -56,9 +57,10 @@ export function useNaturalLanguageChat() {
     setMessages((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setStreamingContent('');
-    setQueryResult(null);
 
     let activeConversationId = conversationId;
+    let assistantMessageId: string | null = null;
+    let assistantMessageContent = '';
 
     try {
       const accessToken = await getLatestAccessToken();
@@ -141,19 +143,25 @@ export function useNaturalLanguageChat() {
       });
 
       if (cleanedContent.trim() || sql) {
-        const assistantMessage: ChatMessage = {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: cleanedContent.trim() || 'Certo, aqui estao os resultados.',
-          timestamp: new Date(),
-        };
-        setMessages((prev) => [...prev, assistantMessage]);
+        assistantMessageContent = cleanedContent.trim();
+        assistantMessageContent = ensureInsightFirstResponse(assistantMessageContent, content, Boolean(sql));
 
-        if (activeConversationId) {
-          try {
-            await createMessage(activeConversationId, 'assistant', assistantMessage.content, false);
-          } catch (error) {
-            console.error('Message create error:', error);
+        if (assistantMessageContent) {
+          const assistantMessage: ChatMessage = {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: assistantMessageContent,
+            timestamp: new Date(),
+          };
+          assistantMessageId = assistantMessage.id;
+          setMessages((prev) => [...prev, assistantMessage]);
+
+          if (activeConversationId) {
+            try {
+              await createMessage(activeConversationId, 'assistant', assistantMessage.content, false);
+            } catch (error) {
+              console.error('Message create error:', error);
+            }
           }
         }
       }
@@ -164,7 +172,7 @@ export function useNaturalLanguageChat() {
           {
             id: crypto.randomUUID(),
             role: 'assistant',
-            content: 'Nao consegui responder agora. Tente reformular.',
+            content: 'Nao consegui interpretar seu pedido com clareza ainda. Se quiser, eu reformulo e tento novamente.',
             timestamp: new Date(),
           },
         ]);
@@ -177,8 +185,41 @@ export function useNaturalLanguageChat() {
         setIsExecuting(false);
 
         if (execResult?.success) {
-          setQueryResult(execResult.data || null);
-          if (execResult.data?.data?.length) {
+          const executionData = (execResult.data || null) as QueryResult | null;
+          const safeExecutionData = sanitizeQueryResultForDisplay(executionData);
+
+          if (!assistantMessageContent) {
+            const synthesizedContent = buildConversationalReplyFromQuery(safeExecutionData, content);
+            const assistantMessage: ChatMessage = {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: synthesizedContent,
+              timestamp: new Date(),
+              queryResult: safeExecutionData,
+            };
+
+            assistantMessageId = assistantMessage.id;
+            setMessages((prev) => [...prev, assistantMessage]);
+
+            if (activeConversationId) {
+              try {
+                await createMessage(activeConversationId, 'assistant', assistantMessage.content, false);
+              } catch (error) {
+                console.error('Message create error:', error);
+              }
+            }
+          }
+
+          if (assistantMessageId && safeExecutionData) {
+            setMessages((prev) =>
+              prev.map((message) =>
+                message.id === assistantMessageId
+                  ? { ...message, queryResult: safeExecutionData }
+                  : message
+              )
+            );
+          }
+          if (executionData?.data?.length) {
             toast.success('Acao concluida com sucesso.');
           }
         } else {
@@ -208,7 +249,6 @@ export function useNaturalLanguageChat() {
     isLoading,
     isExecuting,
     streamingContent,
-    queryResult,
     sendMessage,
     clearMessages,
   };
@@ -631,6 +671,268 @@ async function safeReadJson(response: Response): Promise<Record<string, any> | n
   } catch {
     return null;
   }
+}
+
+function sanitizeQueryResultForDisplay(result: QueryResult | null): QueryResult | null {
+  if (!result) return null;
+  if (!Array.isArray(result.data) || result.data.length === 0) return result;
+
+  const sourceRows = result.data.filter((row): row is Record<string, any> => Boolean(row && typeof row === 'object'));
+  if (!sourceRows.length) return { ...result, data: [] };
+
+  const allowTaskDescription = shouldAllowTaskDescription(sourceRows);
+
+  const candidateColumns = Object.keys(sourceRows[0]).filter((key) =>
+    shouldKeepColumn(key, allowTaskDescription)
+  );
+  const rankedColumns = rankColumns(candidateColumns);
+  const visibleColumns = rankedColumns.slice(0, MAX_VISIBLE_COLUMNS);
+
+  const fallbackColumns = Object.keys(sourceRows[0])
+    .filter((key) => !isSensitiveColumn(key, allowTaskDescription))
+    .slice(0, MAX_VISIBLE_COLUMNS);
+
+  const selectedColumns = visibleColumns.length > 0 ? visibleColumns : fallbackColumns;
+
+  const safeRows = sourceRows.slice(0, MAX_VISIBLE_ROWS).map((row) => {
+    const safeRow: Record<string, any> = {};
+    selectedColumns.forEach((column) => {
+      safeRow[column] = sanitizeCellValue(row[column], column);
+    });
+    return safeRow;
+  });
+
+  return {
+    ...result,
+    data: safeRows,
+  };
+}
+
+function shouldKeepColumn(column: string, allowTaskDescription: boolean) {
+  return !isSensitiveColumn(column, allowTaskDescription) && isUserFacingColumn(column, allowTaskDescription);
+}
+
+function isSensitiveColumn(column: string, allowTaskDescription: boolean) {
+  const key = column.toLowerCase();
+
+  if (key === 'id' || key.endsWith('_id')) return true;
+  if (
+    key.includes('password') ||
+    key.includes('secret') ||
+    key.includes('token') ||
+    key.includes('apikey') ||
+    key.includes('api_key') ||
+    key.includes('key') ||
+    key.includes('hash')
+  ) {
+    return true;
+  }
+  if (
+    key.includes('metadata') ||
+    key.includes('internal') ||
+    key.includes('raw') ||
+    key.includes('payload') ||
+    key.includes('json') ||
+    key.includes('debug') ||
+    key.includes('organization')
+  ) {
+    return true;
+  }
+  if (
+    key === 'created_at' ||
+    key === 'updated_at' ||
+    key === 'deleted_at' ||
+    key === 'archived_at' ||
+    key === 'completed_at'
+  ) {
+    return true;
+  }
+  if ((key === 'description' && !allowTaskDescription) || key === 'notes' || key === 'note') {
+    return true;
+  }
+
+  return false;
+}
+
+function isUserFacingColumn(column: string, allowTaskDescription: boolean) {
+  const key = column.toLowerCase();
+  if (key === 'description' && allowTaskDescription) return true;
+
+  return (
+    key.includes('name') ||
+    key.includes('title') ||
+    key.includes('status') ||
+    key.includes('stage') ||
+    key.includes('priority') ||
+    key.includes('due') ||
+    key.includes('date') ||
+    key.includes('amount') ||
+    key.includes('value') ||
+    key.includes('total') ||
+    key.includes('email') ||
+    key.includes('phone') ||
+    key.includes('company') ||
+    key.includes('contact') ||
+    key.includes('owner') ||
+    key.includes('assigned') ||
+    key.includes('type') ||
+    key.includes('category')
+  );
+}
+
+function rankColumns(columns: string[]) {
+  return [...columns].sort((a, b) => columnWeight(b) - columnWeight(a));
+}
+
+function columnWeight(column: string) {
+  const key = column.toLowerCase();
+  if (key.includes('title') || key.includes('name')) return 100;
+  if (key.includes('status') || key.includes('stage') || key.includes('priority')) return 90;
+  if (key.includes('due') || key.includes('date')) return 80;
+  if (key === 'description') return 75;
+  if (key.includes('amount') || key.includes('value') || key.includes('total')) return 70;
+  if (key.includes('company') || key.includes('contact') || key.includes('owner') || key.includes('assigned')) return 60;
+  return 10;
+}
+
+function shouldAllowTaskDescription(rows: Array<Record<string, any>>) {
+  const keys = new Set(
+    rows.slice(0, 3).flatMap((row) => Object.keys(row).map((key) => key.toLowerCase()))
+  );
+
+  const hasTaskShape =
+    keys.has('title') &&
+    keys.has('status') &&
+    (keys.has('due_date') || keys.has('priority') || keys.has('completed_at') || keys.has('assigned_to'));
+
+  return hasTaskShape && keys.has('description');
+}
+
+function sanitizeCellValue(value: unknown, column?: string) {
+  if (value === null || value === undefined) return '-';
+
+  if (typeof value === 'string') {
+    if (looksLikeUuid(value) || looksLikeJwt(value)) return '[oculto]';
+    const normalized = value.replace(/\s+/g, ' ').trim();
+    if (!normalized) return '-';
+    const maxLength = column?.toLowerCase() === 'description' ? 320 : 140;
+    if (normalized.length > maxLength) return `${normalized.slice(0, maxLength)}...`;
+    return normalized;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (value instanceof Date) return value.toISOString();
+
+  // Prevent nested objects/arrays from leaking raw payloads to end-users.
+  if (typeof value === 'object') return '[resumo indisponivel]';
+
+  const fallback = String(value);
+  if (looksLikeUuid(fallback) || looksLikeJwt(fallback)) return '[oculto]';
+  if (fallback.length > 140) return `${fallback.slice(0, 140)}...`;
+  return fallback;
+}
+
+function looksLikeUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+}
+
+function looksLikeJwt(value: string) {
+  const candidate = value.trim();
+  return candidate.split('.').length === 3 && candidate.length > 40;
+}
+
+function ensureInsightFirstResponse(reply: string, userPrompt: string, hasSql: boolean) {
+  const normalizedReply = reply.trim();
+  if (!normalizedReply) return normalizedReply;
+  if (hasSql) return normalizedReply;
+  if (!looksLikeRefusalResponse(normalizedReply)) return normalizedReply;
+
+  if (isConversionQuestion(userPrompt)) {
+    return [
+      'Consigo te ajudar com essa analise.',
+      'Para dizer se sua taxa de conversao esta boa no seu contexto, preciso destes dados:',
+      '1. Periodo analisado (ex.: ultimos 30 dias)',
+      '2. Etapa da conversao (lead -> oportunidade, oportunidade -> venda etc.)',
+      '3. Volume total e quantidade convertida',
+      '4. Canal/origem principal dos leads',
+      'Com isso eu te devolvo um diagnostico objetivo com acoes praticas.'
+    ].join('\n');
+  }
+
+  return [
+    'Consigo te ajudar com isso.',
+    'Para te entregar um insight confiavel, me passe:',
+    '1. Periodo da analise',
+    '2. Indicador principal que voce quer otimizar',
+    '3. Segmento/filtro (canal, time ou etapa do funil)',
+    'Com esses dados eu te retorno leitura do cenario e proximo passo recomendado.'
+  ].join('\n');
+}
+
+function looksLikeRefusalResponse(text: string) {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes('nao consigo') ||
+    normalized.includes('não consigo') ||
+    normalized.includes('nao posso') ||
+    normalized.includes('não posso') ||
+    normalized.includes('nao tenho os dados') ||
+    normalized.includes('não tenho os dados') ||
+    normalized.includes('posso te ajudar a buscar mais dados') ||
+    normalized.includes('isso pode variar muito dependendo')
+  );
+}
+
+function isConversionQuestion(text: string) {
+  const normalized = text.toLowerCase();
+  return (
+    normalized.includes('taxa de convers') ||
+    normalized.includes('conversao') ||
+    normalized.includes('conversão')
+  );
+}
+
+function buildConversationalReplyFromQuery(result: QueryResult | null, prompt: string) {
+  const normalizedPrompt = prompt.trim();
+  const operation = (result?.operation || '').toLowerCase();
+  const rowCount = Number(result?.rowCount || 0);
+  const rows = Array.isArray(result?.data) ? result.data : [];
+
+  if (operation === 'insert' || operation === 'update' || operation === 'delete') {
+    const affected = rowCount > 0 ? `${rowCount} registro(s)` : 'sem alteracoes';
+    return `Conclui sua solicitacao com sucesso. Operacao: ${operation.toUpperCase()} (${affected}).`;
+  }
+
+  if (!rows.length) {
+    return `Consultei os dados para "${normalizedPrompt}" e nao encontrei registros com esse criterio. Quer que eu tente com outro filtro?`;
+  }
+
+  const firstRow = rows[0];
+  const highlight = summarizeRow(firstRow);
+  const summary = rowCount > 0 ? `${rowCount} registro(s)` : `${rows.length} registro(s)`;
+
+  return `Encontrei ${summary} para sua pergunta. ${highlight ? `Exemplo do primeiro resultado: ${highlight}.` : ''}`.trim();
+}
+
+function summarizeRow(row: Record<string, any>) {
+  const keys = Object.keys(row).slice(0, 3);
+  if (!keys.length) return '';
+
+  return keys
+    .map((key) => `${key}: ${formatSummaryValue(row[key])}`)
+    .join(', ');
+}
+
+function formatSummaryValue(value: unknown) {
+  if (value === null || value === undefined) return '-';
+  if (typeof value === 'string') {
+    const clean = value.replace(/\s+/g, ' ').trim();
+    return clean.length > 40 ? `${clean.slice(0, 40)}...` : clean;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') return '[objeto]';
+  return String(value);
 }
 
 function mapErrorToMessage(code?: string) {

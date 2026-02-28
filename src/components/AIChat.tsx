@@ -28,7 +28,7 @@ export function AIChat({
     "What are my top leads?"
   ]
 }: AIChatProps) {
-  const { messages, isLoading, isExecuting, streamingContent, queryResult, sendMessage, clearMessages } = useNaturalLanguageChat();
+  const { messages, isLoading, isExecuting, streamingContent, sendMessage, clearMessages } = useNaturalLanguageChat();
   const [input, setInput] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,7 +52,7 @@ export function AIChat({
     if (scrollAreaRef.current) {
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
-  }, [messages, streamingContent, queryResult]);
+  }, [messages, streamingContent]);
 
   return (
     <Card className={cn("flex flex-col h-[600px]", className)}>
@@ -118,11 +118,6 @@ export function AIChat({
           {isExecuting && !isLoading && (
             <div className="text-sm text-muted-foreground">Processando resultados...</div>
           )}
-          {queryResult?.data && queryResult.data.length > 0 && (
-            <div className="pt-2">
-              <DynamicDataGrid data={queryResult.data} />
-            </div>
-          )}
         </div>
       </ScrollArea>
 
@@ -153,6 +148,7 @@ export function AIChat({
 function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === 'user';
   const safeContent = cleanMessageContent(message.content);
+  const resultRows = message.queryResult?.data;
 
   return (
     <div className={cn("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
@@ -234,6 +230,11 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         )}>
           {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
+        {!!resultRows?.length && (
+          <div className="mt-3 rounded-md border border-border bg-background p-2">
+            <DynamicDataGrid data={resultRows} />
+          </div>
+        )}
       </div>
     </div>
   );
