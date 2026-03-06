@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -512,6 +512,396 @@ export type Database = {
       outbound_status: "pending" | "processing" | "sent" | "failed"
       participant_role: "owner" | "member"
       sender_kind: "user" | "agent" | "system" | "external"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+  research: {
+    Tables: {
+      project_ai_notes: {
+        Row: {
+          created_at: string
+          created_by_user_id: string
+          id: string
+          input_context: Json
+          organization_id: string
+          output_text: string
+          project_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by_user_id: string
+          id?: string
+          input_context?: Json
+          organization_id: string
+          output_text: string
+          project_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by_user_id?: string
+          id?: string
+          input_context?: Json
+          organization_id?: string
+          output_text?: string
+          project_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_ai_notes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_ai_notes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_documents: {
+        Row: {
+          content_md: string
+          created_at: string
+          created_by_user_id: string
+          doc_type: string
+          id: string
+          organization_id: string
+          project_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          content_md?: string
+          created_at?: string
+          created_by_user_id: string
+          doc_type: string
+          id?: string
+          organization_id: string
+          project_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          content_md?: string
+          created_at?: string
+          created_by_user_id?: string
+          doc_type?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_documents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_documents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_saved_items: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          project_id: string
+          scrape_item_id: string
+          selected_by_user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          project_id: string
+          scrape_item_id: string
+          selected_by_user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          project_id?: string
+          scrape_item_id?: string
+          selected_by_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_saved_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_saved_items_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_saved_items_scrape_item_id_fkey"
+            columns: ["scrape_item_id"]
+            isOneToOne: false
+            referencedRelation: "scrape_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          competitor_username: string
+          created_at: string
+          created_by_user_id: string
+          description: string | null
+          id: string
+          name: string
+          organization_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          competitor_username: string
+          created_at?: string
+          created_by_user_id: string
+          description?: string | null
+          id?: string
+          name: string
+          organization_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          competitor_username?: string
+          created_at?: string
+          created_by_user_id?: string
+          description?: string | null
+          id?: string
+          name?: string
+          organization_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scrape_items: {
+        Row: {
+          caption: string | null
+          comments: Json | null
+          comments_count: number | null
+          created_at: string
+          display_url: string | null
+          id: string
+          likes_count: number | null
+          organization_id: string
+          permalink: string
+          platform_post_id: string | null
+          posted_at: string | null
+          profile_username: string
+          raw_metrics: Json
+          scrape_job_id: string
+          thumbnail_url: string | null
+          type: string
+          video_url: string | null
+          views_count: number | null
+        }
+        Insert: {
+          caption?: string | null
+          comments?: Json | null
+          comments_count?: number | null
+          created_at?: string
+          display_url?: string | null
+          id?: string
+          likes_count?: number | null
+          organization_id: string
+          permalink: string
+          platform_post_id?: string | null
+          posted_at?: string | null
+          profile_username: string
+          raw_metrics?: Json
+          scrape_job_id: string
+          thumbnail_url?: string | null
+          type: string
+          video_url?: string | null
+          views_count?: number | null
+        }
+        Update: {
+          caption?: string | null
+          comments?: Json | null
+          comments_count?: number | null
+          created_at?: string
+          display_url?: string | null
+          id?: string
+          likes_count?: number | null
+          organization_id?: string
+          permalink?: string
+          platform_post_id?: string | null
+          posted_at?: string | null
+          profile_username?: string
+          raw_metrics?: Json
+          scrape_job_id?: string
+          thumbnail_url?: string | null
+          type?: string
+          video_url?: string | null
+          views_count?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scrape_items_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scrape_items_scrape_job_id_fkey"
+            columns: ["scrape_job_id"]
+            isOneToOne: false
+            referencedRelation: "scrape_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scrape_jobs: {
+        Row: {
+          apify_run_id: string
+          created_at: string
+          created_by_user_id: string
+          error: string | null
+          filters: Json
+          id: string
+          organization_id: string
+          profile_username: string
+          result_count: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          apify_run_id: string
+          created_at?: string
+          created_by_user_id: string
+          error?: string | null
+          filters?: Json
+          id?: string
+          organization_id: string
+          profile_username: string
+          result_count?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          apify_run_id?: string
+          created_at?: string
+          created_by_user_id?: string
+          error?: string | null
+          filters?: Json
+          id?: string
+          organization_id?: string
+          profile_username?: string
+          result_count?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scrape_jobs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      vector_queue: {
+        Row: {
+          created_at: string
+          error: string | null
+          id: string
+          metadata: Json
+          organization_id: string
+          payload_text: string
+          processed_at: string | null
+          project_id: string
+          source_id: string
+          source_type: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          metadata?: Json
+          organization_id: string
+          payload_text: string
+          processed_at?: string | null
+          project_id: string
+          source_id: string
+          source_type: string
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          metadata?: Json
+          organization_id?: string
+          payload_text?: string
+          processed_at?: string | null
+          project_id?: string
+          source_id?: string
+          source_type?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vector_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "vector_queue_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2063,9 +2453,13 @@ export const Constants = {
       sender_kind: ["user", "agent", "system", "external"],
     },
   },
+  research: {
+    Enums: {},
+  },
   public: {
     Enums: {
       user_role: ["owner", "admin", "member", "viewer"],
     },
   },
 } as const
+
