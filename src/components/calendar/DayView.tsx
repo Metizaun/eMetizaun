@@ -26,10 +26,10 @@ export function DayView({ day, events, onSelectEvent, onCreateAtTime }: DayViewP
     const allDay = allDayEventsForDay(events, day);
 
     return (
-        <div className="flex flex-col h-full rounded-lg border bg-card overflow-hidden">
+        <div className="flex flex-col h-full overflow-hidden">
             {/* Header */}
-            <div className="flex border-b bg-card z-10 shrink-0">
-                <div style={{ width: 56 }} className="shrink-0 border-r border-border/30" />
+            <div className="flex border-b border-border/40 z-10 shrink-0">
+                <div style={{ width: 56 }} className="shrink-0" />
                 <div className="flex-1">
                     <DayColumnHeader day={day} />
                 </div>
@@ -37,8 +37,8 @@ export function DayView({ day, events, onSelectEvent, onCreateAtTime }: DayViewP
 
             {/* All-day bar */}
             {allDay.length > 0 && (
-                <div className="flex border-b shrink-0">
-                    <div style={{ width: 56 }} className="shrink-0 border-r border-border/30 flex items-center justify-end pr-2">
+                <div className="flex border-b border-border/40 shrink-0">
+                    <div style={{ width: 56 }} className="shrink-0 flex items-center justify-end pr-2">
                         <span className="text-[10px] text-muted-foreground">dia todo</span>
                     </div>
                     <div className="flex-1 flex flex-wrap gap-1 p-1 min-h-[28px]">

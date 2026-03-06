@@ -34,9 +34,9 @@ export function CalendarSidebar({
     };
 
     return (
-        <aside className="w-[248px] shrink-0 space-y-4 hidden lg:block">
+        <aside className="w-[248px] shrink-0 hidden lg:block border-r border-border/40 pr-4">
             {/* Mini Calendar */}
-            <div className="rounded-lg border bg-card p-2">
+            <div className="pb-4">
                 <Calendar
                     mode="single"
                     selected={selectedDate}
@@ -46,7 +46,7 @@ export function CalendarSidebar({
             </div>
 
             {/* Status Filters */}
-            <div className="rounded-lg border bg-card p-3">
+            <div className="pt-2 border-t border-border/30">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                     Filtrar por status
                 </h3>

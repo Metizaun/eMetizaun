@@ -139,7 +139,7 @@ export function CalendarBoard({
           {renderView()}
 
           {loading && (
-            <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] rounded-lg flex items-center justify-center z-30">
+            <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] flex items-center justify-center z-30">
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                 <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
                 Carregando eventos...

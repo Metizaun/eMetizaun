@@ -29,11 +29,11 @@ export function WeekView({ days, events, onSelectEvent, onCreateAtTime }: WeekVi
     const hasAllDay = days.some((day) => allDayEventsForDay(events, day).length > 0);
 
     return (
-        <div className="flex flex-col h-full rounded-lg border bg-card overflow-hidden">
+        <div className="flex flex-col h-full overflow-hidden">
             {/* Sticky header row */}
-            <div className="flex border-b bg-card z-10 shrink-0">
+            <div className="flex border-b border-border/40 z-10 shrink-0">
                 {/* Gutter spacer */}
-                <div style={{ width: 56 }} className="shrink-0 border-r border-border/30" />
+                <div style={{ width: 56 }} className="shrink-0" />
                 {/* Day headers */}
                 <div className="grid flex-1" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>
                     {days.map((day) => (
@@ -44,8 +44,8 @@ export function WeekView({ days, events, onSelectEvent, onCreateAtTime }: WeekVi
 
             {/* All-day events bar */}
             {hasAllDay && (
-                <div className="flex border-b shrink-0">
-                    <div style={{ width: 56 }} className="shrink-0 border-r border-border/30 flex items-center justify-end pr-2">
+                <div className="flex border-b border-border/40 shrink-0">
+                    <div style={{ width: 56 }} className="shrink-0 flex items-center justify-end pr-2">
                         <span className="text-[10px] text-muted-foreground">dia todo</span>
                     </div>
                     <div className="grid flex-1 gap-px p-1" style={{ gridTemplateColumns: `repeat(${days.length}, 1fr)` }}>

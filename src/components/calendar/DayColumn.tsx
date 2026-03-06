@@ -46,7 +46,7 @@ export function DayColumn({ day, events, onSelectEvent, onCreateAtTime }: DayCol
 
     return (
         <div
-            className="relative border-l border-border/50 cursor-pointer"
+            className="relative border-l border-border/30 cursor-pointer"
             style={{ height: GRID_HEIGHT }}
             onClick={handleSlotClick}
         >

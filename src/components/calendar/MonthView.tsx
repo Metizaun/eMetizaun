@@ -36,9 +36,9 @@ export function MonthView({ weeks, currentDate, events, onSelectEvent, onDayClic
     const dayNames = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
 
     return (
-        <div className="flex flex-col h-full rounded-lg border bg-card overflow-hidden">
+        <div className="flex flex-col h-full overflow-hidden">
             {/* Day name headers */}
-            <div className="grid grid-cols-7 border-b bg-card shrink-0">
+            <div className="grid grid-cols-7 border-b border-border/40 shrink-0">
                 {dayNames.map((name) => (
                     <div
                         key={name}
