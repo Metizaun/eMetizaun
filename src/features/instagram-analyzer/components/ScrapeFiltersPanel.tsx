@@ -1,8 +1,8 @@
-import { Loader2, PlayCircle, RefreshCw, Search } from "lucide-react";
+import { Loader2, RefreshCw, Search } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,14 +38,7 @@ export function ScrapeFiltersPanel({
   return (
     <div className="h-full min-h-0 overflow-y-auto bg-card">
       <Card className="h-full rounded-none border-0 shadow-none">
-        <CardHeader className="space-y-2 pb-4">
-          <CardTitle className="text-base font-semibold">Scrap Page</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Configure a coleta do perfil no Apify e acompanhe o progresso por job.
-          </p>
-        </CardHeader>
-
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-5 pt-4">
           <div className="space-y-2">
             <Label htmlFor="instagram-profile">Perfil</Label>
             <Input
@@ -167,15 +160,6 @@ export function ScrapeFiltersPanel({
               <p className="text-xs text-muted-foreground">{job.result_count} itens processados</p>
             ) : null}
             {job?.error ? <p className="text-xs text-destructive">{job.error}</p> : null}
-          </div>
-
-          <div className="space-y-2 rounded-lg border border-dashed p-3">
-            <p className="text-xs font-medium">Modulos</p>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <PlayCircle className="h-4 w-4" />
-              Scrap ativo nesta fase
-            </div>
-            <p className="text-xs text-muted-foreground">Projetos e Chat ficam disponíveis nas abas do workspace.</p>
           </div>
         </CardContent>
       </Card>

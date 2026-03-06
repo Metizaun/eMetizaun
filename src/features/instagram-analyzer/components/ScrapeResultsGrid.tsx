@@ -53,13 +53,6 @@ export function ScrapeResultsGrid({
   return (
     <div className="h-full min-h-0 overflow-hidden bg-muted/20">
       <div className="flex h-full min-h-0 flex-col">
-        <div className="border-b bg-background/80 px-4 py-3">
-          <h2 className="text-sm font-semibold">Resultado do scrap</h2>
-          <p className="text-xs text-muted-foreground">
-            Fotos e reels coletados com metricas de engajamento. Selecione os itens para analise.
-          </p>
-        </div>
-
         <ScrollArea className="h-full">
           <div className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
             {loading

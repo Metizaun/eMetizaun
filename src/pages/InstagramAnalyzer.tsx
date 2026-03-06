@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Instagram, MessageSquare } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Bot, MessageSquare } from "lucide-react";
+import { Link } from "react-router-dom";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 
 import { ScrapeFiltersPanel } from "@/features/instagram-analyzer/components/ScrapeFiltersPanel";
@@ -174,7 +172,7 @@ export default function InstagramAnalyzer() {
       const idsToSave = selectedItemArray.length ? selectedItemArray : fallbackAllIds;
 
       if (!idsToSave.length) {
-        throw new Error("Nenhum item disponível para salvar no projeto.");
+        throw new Error("Nenhum item disponivel para salvar no projeto.");
       }
 
       await saveItemsToProject(created.id, idsToSave);
@@ -217,12 +215,12 @@ export default function InstagramAnalyzer() {
       setSelectedItemIds(new Set());
       await loadProjectStats();
       toast({
-        title: "Seleção salva",
+        title: "Selecao salva",
         description: `${selectedItemArray.length} item(ns) adicionados ao projeto.`,
       });
     } catch (error) {
       toast({
-        title: "Falha ao salvar seleção",
+        title: "Falha ao salvar selecao",
         description: error instanceof Error ? error.message : "Nao foi possivel salvar os itens.",
         variant: "destructive",
       });
@@ -237,13 +235,13 @@ export default function InstagramAnalyzer() {
       });
       await loadProjectStats();
       toast({
-        title: "Análise gerada",
-        description: "Documento de análise posicional criado no projeto.",
+        title: "Analise gerada",
+        description: "Documento de analise posicional criado no projeto.",
       });
     } catch (error) {
       toast({
-        title: "Falha ao gerar análise",
-        description: error instanceof Error ? error.message : "Nao foi possivel gerar análise.",
+        title: "Falha ao gerar analise",
+        description: error instanceof Error ? error.message : "Nao foi possivel gerar analise.",
         variant: "destructive",
       });
     }
@@ -254,12 +252,12 @@ export default function InstagramAnalyzer() {
       await updateProject(projectId, { description: description || null });
       await loadProjectStats();
       toast({
-        title: "Descrição atualizada",
-        description: "A descrição rápida do projeto foi salva.",
+        title: "Descricao atualizada",
+        description: "A descricao rapida do projeto foi salva.",
       });
     } catch (error) {
       toast({
-        title: "Falha ao salvar descrição",
+        title: "Falha ao salvar descricao",
         description: error instanceof Error ? error.message : "Nao foi possivel atualizar o projeto.",
         variant: "destructive",
       });
@@ -268,45 +266,44 @@ export default function InstagramAnalyzer() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
-      <header className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
-        <div className="space-y-1">
-          <h1 className="flex items-center gap-2 text-lg font-semibold">
-            <Instagram className="h-5 w-5" />
-            Instagram Analyzer
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Analise competitiva com scrape via Apify e gestão de projetos no estilo Drive.
-          </p>
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={activeTab === "scrap" ? "default" : "outline"}
+          onClick={() => setActiveTab("scrap")}
+          aria-pressed={activeTab === "scrap"}
+        >
+          Scrap
+        </Button>
 
-        <div className="flex items-center gap-2">
-          <Badge variant={job?.status === "failed" ? "destructive" : "secondary"}>{job?.status || "idle"}</Badge>
-          <Button asChild size="sm" variant="outline">
-            <NavLink to="/instagram-analyzer/chat">
-              <MessageSquare className="mr-1 h-4 w-4" />
-              Chat
-            </NavLink>
-          </Button>
-          <Button asChild size="sm">
-            <Link to="/create">
-              <Bot className="mr-1 h-4 w-4" />
-              Criar conteúdo
-            </Link>
-          </Button>
-        </div>
-      </header>
+        <Button
+          type="button"
+          size="sm"
+          variant={activeTab === "projects" ? "default" : "outline"}
+          onClick={() => setActiveTab("projects")}
+          aria-pressed={activeTab === "projects"}
+        >
+          Projetos
+        </Button>
 
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => setActiveTab(value as "scrap" | "projects")}
-        className="flex h-full min-h-0 flex-col gap-4"
-      >
-        <TabsList className="w-fit">
-          <TabsTrigger value="scrap">Scrap</TabsTrigger>
-          <TabsTrigger value="projects">Projetos</TabsTrigger>
-        </TabsList>
+        <Button asChild size="sm" variant="outline">
+          <Link to="/instagram-analyzer/chat">
+            <MessageSquare className="mr-1 h-4 w-4" />
+            Chat
+          </Link>
+        </Button>
 
-        <TabsContent value="scrap" className="h-full min-h-0">
+        <Button asChild size="sm" variant="default">
+          <Link to="/create">
+            <Bot className="mr-1 h-4 w-4" />
+            Criar conteúdo
+          </Link>
+        </Button>
+      </div>
+
+      {activeTab === "scrap" ? (
+        <div className="h-full min-h-0">
           <div className="h-full min-h-0 overflow-hidden rounded-lg border bg-background">
             <ResizablePanelGroup direction="horizontal" className="h-full min-h-0 w-full">
               <ResizablePanel defaultSize={22} minSize={18}>
@@ -342,9 +339,11 @@ export default function InstagramAnalyzer() {
               </ResizablePanel>
             </ResizablePanelGroup>
           </div>
-        </TabsContent>
+        </div>
+      ) : null}
 
-        <TabsContent value="projects" className="h-full min-h-0">
+      {activeTab === "projects" ? (
+        <div className="h-full min-h-0">
           <ProjectsDriveTab
             projects={projectStats}
             loading={projectsLoading}
@@ -356,8 +355,8 @@ export default function InstagramAnalyzer() {
             onGenerateAnalysis={handleGenerateAnalysis}
             onUpdateDescription={handleUpdateProjectDescription}
           />
-        </TabsContent>
-      </Tabs>
+        </div>
+      ) : null}
 
       <CreateProjectFromScrapeDialog
         open={createDialogOpen}
