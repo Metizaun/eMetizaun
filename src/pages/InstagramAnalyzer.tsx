@@ -51,7 +51,6 @@ export default function InstagramAnalyzer() {
     syncing,
     error: scrapeError,
     startScrape,
-    fetchStatus,
   } = useInstagramScrape();
 
   const {
@@ -108,28 +107,12 @@ export default function InstagramAnalyzer() {
       await startScrape(profileUsername, filters);
       toast({
         title: "Scrape iniciado",
-        description: "A coleta foi enviada para o Apify. Acompanhe o status no painel.",
+        description: "A coleta foi iniciada. Aguarde a barra de progresso concluir.",
       });
     } catch (error) {
       toast({
         title: "Falha ao iniciar scrape",
         description: error instanceof Error ? error.message : "Nao foi possivel iniciar a coleta.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleRefreshStatus = async () => {
-    if (!job?.id) {
-      return;
-    }
-
-    try {
-      await fetchStatus(job.id);
-    } catch (error) {
-      toast({
-        title: "Falha ao atualizar status",
-        description: error instanceof Error ? error.message : "Nao foi possivel atualizar o status.",
         variant: "destructive",
       });
     }
@@ -259,7 +242,6 @@ export default function InstagramAnalyzer() {
                   onProfileUsernameChange={setProfileUsername}
                   onFiltersChange={(updates) => setFilters((current) => ({ ...current, ...updates }))}
                   onStartScrape={handleStartScrape}
-                  onRefreshStatus={handleRefreshStatus}
                 />
               </ResizablePanel>
 

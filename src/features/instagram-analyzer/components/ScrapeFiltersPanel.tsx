@@ -1,11 +1,11 @@
-import { Loader2, RefreshCw, Search } from "lucide-react";
+import { Loader2, Search } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import type { InstagramScrapeFilters, ResearchScrapeJob } from "@/features/instagram-analyzer/types";
@@ -19,7 +19,6 @@ type ScrapeFiltersPanelProps = {
   onProfileUsernameChange: (value: string) => void;
   onFiltersChange: (updates: Partial<InstagramScrapeFilters>) => void;
   onStartScrape: () => Promise<void>;
-  onRefreshStatus: () => Promise<void>;
 };
 
 export function ScrapeFiltersPanel({
@@ -31,9 +30,27 @@ export function ScrapeFiltersPanel({
   onProfileUsernameChange,
   onFiltersChange,
   onStartScrape,
-  onRefreshStatus,
 }: ScrapeFiltersPanelProps) {
   const isBusy = loading || syncing;
+  const progressValue = (() => {
+    if (loading) return 12;
+    if (job?.status === "queued") return 28;
+    if (job?.status === "running") return 62;
+    if (syncing) return 85;
+    if (job?.status === "succeeded") return 100;
+    if (job?.status === "failed") return 100;
+    return 0;
+  })();
+
+  const progressLabel = (() => {
+    if (loading) return "Iniciando coleta...";
+    if (job?.status === "queued") return "Fila iniciada. Aguarde alguns segundos...";
+    if (job?.status === "running") return "Coletando publicacoes...";
+    if (syncing) return "Processando resultados...";
+    if (job?.status === "succeeded") return "Coleta concluida.";
+    if (job?.status === "failed") return "Falha na coleta. Tente novamente.";
+    return "Defina o perfil e inicie a coleta.";
+  })();
 
   return (
     <div className="h-full min-h-0 overflow-y-auto bg-card">
@@ -68,6 +85,21 @@ export function ScrapeFiltersPanel({
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="only-posts-newer-than">Data inicial</Label>
+            <Input
+              id="only-posts-newer-than"
+              type="date"
+              value={filters.onlyPostsNewerThan || ""}
+              onChange={(event) =>
+                onFiltersChange({
+                  onlyPostsNewerThan: event.target.value || null,
+                })
+              }
+              disabled={isBusy}
+            />
+          </div>
+
+          <div className="space-y-2">
             <Label>Ordenacao</Label>
             <Select
               value={filters.sortBy}
@@ -92,7 +124,7 @@ export function ScrapeFiltersPanel({
           <div className="space-y-3 rounded-lg border p-3">
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="include-comments" className="text-sm">
-                Box para comentarios
+                Comentarios
               </Label>
               <Checkbox
                 id="include-comments"
@@ -105,9 +137,12 @@ export function ScrapeFiltersPanel({
                 disabled={isBusy}
               />
             </div>
+          </div>
+
+          <div className="space-y-3 rounded-lg border p-3">
             <div className="flex items-center justify-between gap-2">
               <Label htmlFor="include-captions" className="text-sm">
-                Box para legendas
+                Legendas
               </Label>
               <Checkbox
                 id="include-captions"
@@ -133,33 +168,16 @@ export function ScrapeFiltersPanel({
             Iniciar scrape
           </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => {
-              void onRefreshStatus();
-            }}
-            disabled={!job?.id || isBusy}
-          >
-            {syncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-            Atualizar status
-          </Button>
-
           <div className="space-y-2 rounded-lg border bg-muted/30 p-3">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-xs font-medium text-muted-foreground">Status do job</p>
-              <Badge variant={job?.status === "failed" ? "destructive" : "secondary"}>
-                {job?.status || "idle"}
-              </Badge>
+              <p className="text-xs font-medium text-muted-foreground">Progresso da coleta</p>
+              <p className="text-xs text-muted-foreground">{progressValue}%</p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {job ? `Run ${job.apify_run_id}` : "Nenhum scrape iniciado nesta sessao."}
-            </p>
-            {job?.result_count ? (
-              <p className="text-xs text-muted-foreground">{job.result_count} itens processados</p>
+            <Progress value={progressValue} className={job?.status === "failed" ? "[&>div]:bg-destructive" : ""} />
+            <p className="text-xs text-muted-foreground">{progressLabel}</p>
+            {job?.status === "failed" && job?.error ? (
+              <p className="text-xs text-destructive">{job.error}</p>
             ) : null}
-            {job?.error ? <p className="text-xs text-destructive">{job.error}</p> : null}
           </div>
         </CardContent>
       </Card>

@@ -8,8 +8,6 @@ export default function AIAssistant() {
           "Empresa Acme tem quantas tasks em aberto?",
           "Mostre meus leads mais recentes",
           "Quais sao meus contatos mais recentes?",
-          "Crie uma task chamada Follow up Acme",
-          "Crie uma nota sobre a negociacao com a Acme",
         ]}
       />
     </div>

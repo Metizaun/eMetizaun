@@ -27,6 +27,7 @@ type ScrapeJobRow = {
   filters: {
     postsLimit?: number;
     sortBy?: "most_liked" | "most_viewed" | "recent";
+    onlyPostsNewerThan?: string | null;
     includeComments?: boolean;
     includeCaptions?: boolean;
   } | null;

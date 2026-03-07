@@ -60,12 +60,12 @@ const App = () => (
                 <Route path="/calendar" element={<ProtectedRoute><MainLayout fluid><Calendar /></MainLayout></ProtectedRoute>} />
                 <Route path="/reports" element={<ProtectedRoute><MainLayout><Reports /></MainLayout></ProtectedRoute>} />
                 <Route path="/notifications" element={<ProtectedRoute><MainLayout><Notifications /></MainLayout></ProtectedRoute>} />
-                <Route path="/inbox" element={<ProtectedRoute><MainLayout fluid><Inbox /></MainLayout></ProtectedRoute>} />
+                <Route path="/inbox" element={<ProtectedRoute><MainLayout fluid noPadding><Inbox /></MainLayout></ProtectedRoute>} />
                 <Route path="/settings" element={<ProtectedRoute><MainLayout><Settings /></MainLayout></ProtectedRoute>} />
                 <Route path="/search" element={<ProtectedRoute><MainLayout><Search /></MainLayout></ProtectedRoute>} />
                 <Route path="/search-results" element={<ProtectedRoute><MainLayout><SearchResults /></MainLayout></ProtectedRoute>} />
                 <Route path="/notes" element={<ProtectedRoute><MainLayout><Notes /></MainLayout></ProtectedRoute>} />
-                <Route path="/ai-assistant" element={<ProtectedRoute><MainLayout fluid><AIAssistant /></MainLayout></ProtectedRoute>} />
+                <Route path="/ai-assistant" element={<ProtectedRoute><MainLayout fluid noPadding><AIAssistant /></MainLayout></ProtectedRoute>} />
                 <Route path="/create" element={<ProtectedRoute><MainLayout><Create /></MainLayout></ProtectedRoute>} />
                 <Route path="/instagram-analyzer" element={<ProtectedRoute><MainLayout fluid><InstagramAnalyzer /></MainLayout></ProtectedRoute>} />
                 <Route path="/instagram-analyzer/chat" element={<ProtectedRoute><MainLayout><InstagramAnalyzerChat /></MainLayout></ProtectedRoute>} />
