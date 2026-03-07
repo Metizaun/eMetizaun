@@ -65,7 +65,7 @@ const App = () => (
                 <Route path="/search" element={<ProtectedRoute><MainLayout><Search /></MainLayout></ProtectedRoute>} />
                 <Route path="/search-results" element={<ProtectedRoute><MainLayout><SearchResults /></MainLayout></ProtectedRoute>} />
                 <Route path="/notes" element={<ProtectedRoute><MainLayout><Notes /></MainLayout></ProtectedRoute>} />
-                <Route path="/ai-assistant" element={<ProtectedRoute><MainLayout><AIAssistant /></MainLayout></ProtectedRoute>} />
+                <Route path="/ai-assistant" element={<ProtectedRoute><MainLayout fluid><AIAssistant /></MainLayout></ProtectedRoute>} />
                 <Route path="/create" element={<ProtectedRoute><MainLayout><Create /></MainLayout></ProtectedRoute>} />
                 <Route path="/instagram-analyzer" element={<ProtectedRoute><MainLayout fluid><InstagramAnalyzer /></MainLayout></ProtectedRoute>} />
                 <Route path="/instagram-analyzer/chat" element={<ProtectedRoute><MainLayout><InstagramAnalyzerChat /></MainLayout></ProtectedRoute>} />

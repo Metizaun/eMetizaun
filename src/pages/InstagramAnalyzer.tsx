@@ -40,7 +40,6 @@ export default function InstagramAnalyzer() {
   const [profileUsername, setProfileUsername] = useState("");
   const [filters, setFilters] = useState<InstagramScrapeFilters>(DEFAULT_INSTAGRAM_FILTERS);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [projectStats, setProjectStats] = useState<ResearchProjectStats[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [creatingProject, setCreatingProject] = useState(false);
@@ -59,13 +58,11 @@ export default function InstagramAnalyzer() {
     projects,
     loading: projectsLoading,
     createProject,
-    updateProject,
     saveItemsToProject,
     fetchProjectsWithStats,
   } = useInstagramProjects();
   const { generateInsights } = useInstagramInsights();
 
-  const selectedItemsCount = selectedItemIds.size;
   const selectedItemArray = useMemo(() => Array.from(selectedItemIds), [selectedItemIds]);
 
   const scrapeCompetitorUsername = useMemo(() => {
@@ -92,12 +89,6 @@ export default function InstagramAnalyzer() {
   useEffect(() => {
     void loadProjectStats();
   }, [loadProjectStats, projects.length]);
-
-  useEffect(() => {
-    if (!selectedProjectId && projectStats.length) {
-      setSelectedProjectId(projectStats[0].id);
-    }
-  }, [projectStats, selectedProjectId]);
 
   useEffect(() => {
     if (!scrapeError) {
@@ -163,6 +154,7 @@ export default function InstagramAnalyzer() {
 
     setCreatingProject(true);
     try {
+      let initialAnalysisFailed = false;
       const created = await createProject({
         name: projectName,
         competitorUsername: scrapeCompetitorUsername,
@@ -176,17 +168,34 @@ export default function InstagramAnalyzer() {
       }
 
       await saveItemsToProject(created.id, idsToSave);
+
+      try {
+        await generateInsights({
+          projectId: created.id,
+          focus: "posicionamento",
+        });
+      } catch {
+        initialAnalysisFailed = true;
+      }
+
       await loadProjectStats();
 
-      setSelectedProjectId(created.id);
       setSelectedItemIds(new Set());
       setCreateDialogOpen(false);
       setActiveTab("projects");
 
-      toast({
-        title: "Projeto criado",
-        description: `${idsToSave.length} item(ns) foram salvos automaticamente no projeto.`,
-      });
+      if (initialAnalysisFailed) {
+        toast({
+          title: "Projeto criado com ressalva",
+          description: `${idsToSave.length} item(ns) foram salvos, mas a analise inicial falhou. Gere novamente na aba Arquivos do projeto.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Projeto criado",
+          description: `${idsToSave.length} item(ns) foram salvos e a analise inicial foi gerada.`,
+        });
+      }
     } catch (error) {
       toast({
         title: "Falha ao criar projeto",
@@ -195,72 +204,6 @@ export default function InstagramAnalyzer() {
       });
     } finally {
       setCreatingProject(false);
-    }
-  };
-
-  const handleSaveSelectionToProject = async (projectId: string) => {
-    if (!projectId) return;
-
-    if (!selectedItemArray.length) {
-      toast({
-        title: "Nenhum item selecionado",
-        description: "Selecione posts no Scrap antes de salvar no projeto.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      await saveItemsToProject(projectId, selectedItemArray);
-      setSelectedItemIds(new Set());
-      await loadProjectStats();
-      toast({
-        title: "Selecao salva",
-        description: `${selectedItemArray.length} item(ns) adicionados ao projeto.`,
-      });
-    } catch (error) {
-      toast({
-        title: "Falha ao salvar selecao",
-        description: error instanceof Error ? error.message : "Nao foi possivel salvar os itens.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleGenerateAnalysis = async (projectId: string) => {
-    try {
-      await generateInsights({
-        projectId,
-        focus: "posicionamento",
-      });
-      await loadProjectStats();
-      toast({
-        title: "Analise gerada",
-        description: "Documento de analise posicional criado no projeto.",
-      });
-    } catch (error) {
-      toast({
-        title: "Falha ao gerar analise",
-        description: error instanceof Error ? error.message : "Nao foi possivel gerar analise.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const handleUpdateProjectDescription = async (projectId: string, description: string) => {
-    try {
-      await updateProject(projectId, { description: description || null });
-      await loadProjectStats();
-      toast({
-        title: "Descricao atualizada",
-        description: "A descricao rapida do projeto foi salva.",
-      });
-    } catch (error) {
-      toast({
-        title: "Falha ao salvar descricao",
-        description: error instanceof Error ? error.message : "Nao foi possivel atualizar o projeto.",
-        variant: "destructive",
-      });
     }
   };
 
@@ -297,7 +240,7 @@ export default function InstagramAnalyzer() {
         <Button asChild size="sm" variant="default">
           <Link to="/create">
             <Bot className="mr-1 h-4 w-4" />
-            Criar conteúdo
+            Criar conteudo
           </Link>
         </Button>
       </div>
@@ -347,13 +290,7 @@ export default function InstagramAnalyzer() {
           <ProjectsDriveTab
             projects={projectStats}
             loading={projectsLoading}
-            selectedProjectId={selectedProjectId}
-            selectedItemsCount={selectedItemsCount}
-            onSelectProject={setSelectedProjectId}
             onOpenCreateDialog={() => setCreateDialogOpen(true)}
-            onSaveSelection={handleSaveSelectionToProject}
-            onGenerateAnalysis={handleGenerateAnalysis}
-            onUpdateDescription={handleUpdateProjectDescription}
           />
         </div>
       ) : null}

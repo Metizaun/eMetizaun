@@ -1,13 +1,7 @@
 import { AIChat } from '@/components/AIChat';
 export default function AIAssistant() {
-  return <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">AI Assistant</h1>
-        <p className="text-muted-foreground">
-          Get intelligent insights about your CRM data, generate content, and streamline your workflow with AI.
-        </p>
-      </div>
-
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
       <AIChat
         suggestions={[
           "Quantas tasks em aberto eu tenho?",
@@ -18,5 +12,6 @@ export default function AIAssistant() {
           "Crie uma nota sobre a negociacao com a Acme",
         ]}
       />
-    </div>;
+    </div>
+  );
 }

@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ExternalLink, FileText, Loader2, Sparkles } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileText, Loader2, PlayCircle, Sparkles } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -14,7 +21,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 
 import { useInstagramInsights } from "@/features/instagram-analyzer/hooks/useInstagramInsights";
-import { useInstagramProjects, type ResearchProjectDetail } from "@/features/instagram-analyzer/hooks/useInstagramProjects";
+import {
+  useInstagramProjects,
+  type ResearchProjectDetail,
+  type ResearchSavedItemView,
+} from "@/features/instagram-analyzer/hooks/useInstagramProjects";
 import type {
   InstagramInsightsFocus,
 } from "@/features/instagram-analyzer/types";
@@ -43,6 +54,10 @@ export default function InstagramProject() {
   const [originalScript, setOriginalScript] = useState("");
   const [improvementGoal, setImprovementGoal] = useState("");
   const [scriptResult, setScriptResult] = useState<{ improvedScript: string; rationale: string } | null>(null);
+  const [selectedSavedItem, setSelectedSavedItem] = useState<ResearchSavedItemView | null>(null);
+  const [modalScriptBase, setModalScriptBase] = useState("");
+  const [modalScriptGoal, setModalScriptGoal] = useState("");
+  const [modalScriptResult, setModalScriptResult] = useState<{ improvedScript: string; rationale: string } | null>(null);
 
   const activeDocument = useMemo(
     () => detail?.documents.find((doc) => doc.id === activeDocId) || null,
@@ -90,6 +105,13 @@ export default function InstagramProject() {
     setDocTitle(activeDocument.title);
     setDocContent(activeDocument.content_md || "");
   }, [activeDocument]);
+
+  useEffect(() => {
+    if (!selectedSavedItem) return;
+    setModalScriptBase(selectedSavedItem.item.caption || "");
+    setModalScriptGoal("");
+    setModalScriptResult(null);
+  }, [selectedSavedItem]);
 
   const handleSaveDocument = async () => {
     if (!activeDocId) {
@@ -192,6 +214,32 @@ export default function InstagramProject() {
     }
   };
 
+  const handleImproveScriptFromModal = async () => {
+    if (!projectId || !selectedSavedItem || !modalScriptBase.trim()) {
+      return;
+    }
+
+    try {
+      const result = await improveScript({
+        projectId,
+        originalScript: modalScriptBase.trim(),
+        improvementGoal: modalScriptGoal.trim(),
+      });
+      setModalScriptResult(result);
+      await loadProject();
+      toast({
+        title: "Roteiro melhorado",
+        description: "Versao otimizada gerada e salva nos arquivos do projeto.",
+      });
+    } catch (error) {
+      toast({
+        title: "Falha ao melhorar roteiro",
+        description: error instanceof Error ? error.message : "Nao foi possivel otimizar o roteiro.",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -249,33 +297,43 @@ export default function InstagramProject() {
                 </div>
               ) : null}
 
-              {detail.savedItems.map(({ relationId, item }) => (
-                <Card key={relationId} className="overflow-hidden">
+              {detail.savedItems.map((saved) => (
+                <Card
+                  key={saved.relationId}
+                  className="overflow-hidden transition hover:bg-muted/20"
+                >
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
-                      <CardTitle className="text-sm">{item.type === "reel" ? "Reel" : "Foto"}</CardTitle>
-                      <Badge variant="outline">{item.type}</Badge>
+                      <CardTitle className="text-sm">{saved.item.type === "reel" ? "Reel" : "Foto"}</CardTitle>
+                      <Badge variant="outline">{saved.item.type}</Badge>
                     </div>
                   </CardHeader>
-                  <CardContent className="space-y-3">
-                    {item.thumbnail_url || item.display_url ? (
-                      <img
-                        src={item.thumbnail_url || item.display_url || ""}
-                        alt={item.caption?.slice(0, 30) || item.permalink}
-                        className="h-48 w-full rounded-md object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-48 items-center justify-center rounded-md border bg-muted/30 text-xs text-muted-foreground">
-                        Sem preview
+                  <CardContent className="space-y-3" onClick={() => setSelectedSavedItem(saved)}>
+                    <button type="button" className="w-full text-left">
+                      {saved.item.thumbnail_url || saved.item.display_url ? (
+                        <img
+                          src={saved.item.thumbnail_url || saved.item.display_url || ""}
+                          alt={saved.item.caption?.slice(0, 30) || saved.item.permalink}
+                          className="h-48 w-full rounded-md object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-48 items-center justify-center rounded-md border bg-muted/30 text-xs text-muted-foreground">
+                          Sem preview
+                        </div>
+                      )}
+                      <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                        <div className="rounded bg-muted/30 px-2 py-1">Likes: {saved.item.likes_count || 0}</div>
+                        <div className="rounded bg-muted/30 px-2 py-1">Coms: {saved.item.comments_count || 0}</div>
+                        <div className="rounded bg-muted/30 px-2 py-1">Views: {saved.item.views_count || 0}</div>
                       </div>
-                    )}
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div className="rounded bg-muted/30 px-2 py-1">Likes: {item.likes_count || 0}</div>
-                      <div className="rounded bg-muted/30 px-2 py-1">Coms: {item.comments_count || 0}</div>
-                      <div className="rounded bg-muted/30 px-2 py-1">Views: {item.views_count || 0}</div>
-                    </div>
+                    </button>
                     <Button asChild size="sm" variant="outline" className="w-full">
-                      <a href={item.permalink} target="_blank" rel="noreferrer">
+                      <a
+                        href={saved.item.permalink}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         <ExternalLink className="mr-2 h-4 w-4" />
                         Abrir post
                       </a>
@@ -417,6 +475,92 @@ export default function InstagramProject() {
           </div>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={Boolean(selectedSavedItem)} onOpenChange={(open) => !open && setSelectedSavedItem(null)}>
+        <DialogContent className="max-h-[90vh] sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedSavedItem?.item.type === "reel" ? "Detalhes do reel salvo" : "Detalhes do post salvo"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <ScrollArea className="max-h-[75vh] pr-2">
+            {selectedSavedItem ? (
+              <div className="space-y-4">
+                <div className="overflow-hidden rounded-lg border">
+                  {selectedSavedItem.item.type === "reel" && selectedSavedItem.item.video_url ? (
+                    <video src={selectedSavedItem.item.video_url} controls className="h-full w-full" />
+                  ) : selectedSavedItem.item.thumbnail_url || selectedSavedItem.item.display_url ? (
+                    <AspectRatio ratio={4 / 5}>
+                      <img
+                        src={selectedSavedItem.item.thumbnail_url || selectedSavedItem.item.display_url || ""}
+                        alt={selectedSavedItem.item.caption?.slice(0, 40) || selectedSavedItem.item.permalink}
+                        className="h-full w-full object-cover"
+                      />
+                    </AspectRatio>
+                  ) : (
+                    <div className="flex h-64 items-center justify-center bg-muted text-sm text-muted-foreground">
+                      Sem preview disponivel
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded bg-muted/30 px-2 py-1">Likes: {selectedSavedItem.item.likes_count || 0}</div>
+                  <div className="rounded bg-muted/30 px-2 py-1">Comentarios: {selectedSavedItem.item.comments_count || 0}</div>
+                  <div className="rounded bg-muted/30 px-2 py-1">Views: {selectedSavedItem.item.views_count || 0}</div>
+                </div>
+
+                <div className="space-y-2 rounded-lg border p-3">
+                  <p className="text-xs font-medium text-muted-foreground">Legenda</p>
+                  <p className="whitespace-pre-wrap text-sm">{selectedSavedItem.item.caption || "Sem legenda coletada."}</p>
+                </div>
+
+                <Button asChild size="sm" variant="outline">
+                  <a href={selectedSavedItem.item.permalink} target="_blank" rel="noreferrer">
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Abrir no Instagram
+                  </a>
+                </Button>
+
+                {selectedSavedItem.item.type === "reel" ? (
+                  <div className="space-y-3 rounded-lg border bg-muted/10 p-4">
+                    <div className="flex items-center gap-2">
+                      <PlayCircle className="h-4 w-4" />
+                      <p className="text-sm font-medium">Gerar roteiro para este reel</p>
+                    </div>
+                    <Textarea
+                      placeholder="Base do roteiro (pode editar a legenda ou colar texto base)"
+                      value={modalScriptBase}
+                      onChange={(event) => setModalScriptBase(event.target.value)}
+                      rows={4}
+                    />
+                    <Input
+                      placeholder="O que deseja melhorar neste roteiro?"
+                      value={modalScriptGoal}
+                      onChange={(event) => setModalScriptGoal(event.target.value)}
+                    />
+                    <Button
+                      onClick={() => void handleImproveScriptFromModal()}
+                      disabled={scriptLoading || !modalScriptBase.trim()}
+                    >
+                      {scriptLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                      Gerar roteiro
+                    </Button>
+                    {modalScriptResult ? (
+                      <div className="space-y-2 rounded-lg border bg-background p-3">
+                        <p className="text-xs font-medium">Roteiro gerado</p>
+                        <pre className="whitespace-pre-wrap text-xs">{modalScriptResult.improvedScript}</pre>
+                        <p className="text-xs text-muted-foreground">{modalScriptResult.rationale}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
