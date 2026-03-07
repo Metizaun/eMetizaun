@@ -9,6 +9,7 @@ interface MonthViewProps {
     events: CalendarEvent[];
     onSelectEvent: (eventId: string) => void;
     onDayClick: (day: Date) => void;
+    onMoveOrResizeEvent?: (payload: { id: string; start_time: string; end_time: string; all_day: boolean; }) => Promise<void>;
 }
 
 const STATUS_DOT_COLORS: Record<CalendarEvent['status'], string> = {
@@ -21,7 +22,7 @@ const STATUS_DOT_COLORS: Record<CalendarEvent['status'], string> = {
 
 const MAX_VISIBLE_EVENTS = 3;
 
-export function MonthView({ weeks, currentDate, events, onSelectEvent, onDayClick }: MonthViewProps) {
+export function MonthView({ weeks, currentDate, events, onSelectEvent, onDayClick, onMoveOrResizeEvent }: MonthViewProps) {
     const eventsByDay = useMemo(() => {
         const map = new Map<string, CalendarEvent[]>();
         for (const event of events) {
@@ -69,6 +70,36 @@ export function MonthView({ weeks, currentDate, events, onSelectEvent, onDayClic
                     ${!inMonth ? 'opacity-40' : ''}
                   `}
                                     onClick={() => onDayClick(day)}
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.dataTransfer.dropEffect = 'move';
+                                    }}
+                                    onDrop={(e) => {
+                                        e.preventDefault();
+                                        const data = e.dataTransfer.getData('application/calendar-event');
+                                        if (!data || !onMoveOrResizeEvent) return;
+
+                                        try {
+                                            const { id, durationMs } = JSON.parse(data);
+                                            const originalEvent = events.find(e => e.id === id);
+                                            if (!originalEvent) return;
+
+                                            const origStart = parseISO(originalEvent.start_time);
+                                            const newStart = new Date(day);
+                                            newStart.setHours(origStart.getHours(), origStart.getMinutes(), 0, 0);
+
+                                            const newEnd = new Date(newStart.getTime() + durationMs);
+
+                                            onMoveOrResizeEvent({
+                                                id,
+                                                start_time: newStart.toISOString(),
+                                                end_time: newEnd.toISOString(),
+                                                all_day: originalEvent.all_day,
+                                            });
+                                        } catch (err) {
+                                            console.error('Failed to parse dropped event data');
+                                        }
+                                    }}
                                 >
                                     {/* Date number */}
                                     <div className="flex justify-center mb-0.5">
@@ -91,6 +122,15 @@ export function MonthView({ weeks, currentDate, events, onSelectEvent, onDayClic
                                             <button
                                                 key={event.id}
                                                 type="button"
+                                                draggable
+                                                onDragStart={(e) => {
+                                                    const durationMs = parseISO(event.end_time).getTime() - parseISO(event.start_time).getTime();
+                                                    e.dataTransfer.setData('application/calendar-event', JSON.stringify({
+                                                        id: event.id,
+                                                        durationMs,
+                                                    }));
+                                                    e.dataTransfer.effectAllowed = 'move';
+                                                }}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     onSelectEvent(event.id);

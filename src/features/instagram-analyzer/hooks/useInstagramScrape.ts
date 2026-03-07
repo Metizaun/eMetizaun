@@ -12,6 +12,61 @@ import type {
 } from "@/features/instagram-analyzer/types";
 import { DEFAULT_INSTAGRAM_FILTERS } from "@/features/instagram-analyzer/types";
 
+async function getFunctionsAuthHeaders() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    throw new Error(error.message || "Falha ao obter sessao");
+  }
+
+  const accessToken = data.session?.access_token;
+  if (!accessToken) {
+    throw new Error("Sessao expirada. Faca login novamente.");
+  }
+
+  return {
+    Authorization: `Bearer ${accessToken}`,
+  };
+}
+
+async function getEdgeFunctionErrorMessage(error: unknown, fallback: string) {
+  if (!error) return fallback;
+
+  const maybeError = error as {
+    message?: string;
+    context?: {
+      clone?: () => { json?: () => Promise<unknown> };
+      json?: () => Promise<unknown>;
+    };
+  };
+
+  const context = maybeError.context;
+  if (context) {
+    try {
+      const payload = context.clone
+        ? await context.clone().json?.()
+        : await context.json?.();
+
+      if (payload && typeof payload === "object") {
+        const candidate =
+          (payload as { error?: unknown; message?: unknown }).error ??
+          (payload as { message?: unknown }).message;
+
+        if (typeof candidate === "string" && candidate.trim()) {
+          return candidate;
+        }
+      }
+    } catch {
+      // Ignore payload parse issues and fallback below.
+    }
+  }
+
+  if (typeof maybeError.message === "string" && maybeError.message.trim()) {
+    return maybeError.message;
+  }
+
+  return fallback;
+}
+
 export function useInstagramScrape() {
   const { currentOrganization } = useOrganizationContext();
 
@@ -36,6 +91,7 @@ export function useInstagramScrape() {
       const { data, error: invokeError } = await supabase.functions.invoke<InstagramScrapeStatusResult>(
         "instagram-scrape-status",
         {
+          headers: await getFunctionsAuthHeaders(),
           body: {
             jobId: targetJobId,
           },
@@ -43,7 +99,8 @@ export function useInstagramScrape() {
       );
 
       if (invokeError) {
-        throw invokeError;
+        const message = await getEdgeFunctionErrorMessage(invokeError, "Failed to load scrape status");
+        throw new Error(message);
       }
 
       if (!data?.job) {
@@ -66,11 +123,13 @@ export function useInstagramScrape() {
       setSyncing(true);
       try {
         const { error: invokeError } = await supabase.functions.invoke("instagram-scrape-sync", {
+          headers: await getFunctionsAuthHeaders(),
           body: { jobId: targetJobId },
         });
 
         if (invokeError) {
-          throw invokeError;
+          const message = await getEdgeFunctionErrorMessage(invokeError, "Failed to sync scrape data");
+          throw new Error(message);
         }
 
         await fetchStatus(targetJobId);
@@ -99,6 +158,7 @@ export function useInstagramScrape() {
         const { data, error: invokeError } = await supabase.functions.invoke<InstagramScrapeStartResult>(
           "instagram-scrape-start",
           {
+            headers: await getFunctionsAuthHeaders(),
             body: {
               profileUsername,
               organizationId: currentOrganization.id,
@@ -108,7 +168,8 @@ export function useInstagramScrape() {
         );
 
         if (invokeError) {
-          throw invokeError;
+          const message = await getEdgeFunctionErrorMessage(invokeError, "Failed to start scrape");
+          throw new Error(message);
         }
 
         if (!data?.jobId) {
@@ -191,4 +252,3 @@ export function useInstagramScrape() {
     setActiveJobId,
   };
 }
-

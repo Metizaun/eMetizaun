@@ -3,6 +3,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import {
   corsHeaders,
   ensureOrgAccess,
+  getApifyActorReferences,
+  getApifyToken,
   getAuthContext,
   HttpError,
   jsonResponse,
@@ -21,7 +23,58 @@ type ScrapeStartPayload = {
   };
 };
 
-const APIFY_ACTOR_PATH = "apify~instagram-scraper";
+type ApifyRunStartResult = {
+  runId: string;
+  status: string;
+  actorRef: string;
+};
+
+async function startApifyRun(
+  actorReferences: string[],
+  apifyToken: string,
+  actorInput: Record<string, unknown>,
+): Promise<ApifyRunStartResult> {
+  const errors: string[] = [];
+
+  for (const actorRef of actorReferences) {
+    const response = await fetch(
+      `https://api.apify.com/v2/acts/${actorRef}/runs?token=${apifyToken}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(actorInput),
+      },
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      errors.push(`${actorRef}: ${response.status} ${errorText}`);
+      continue;
+    }
+
+    const data = await response.json();
+    const runId = data?.data?.id as string | undefined;
+    const status = data?.data?.status as string | undefined;
+
+    if (!runId) {
+      errors.push(`${actorRef}: response missing run id`);
+      continue;
+    }
+
+    return {
+      runId,
+      status: mapApifyStatus(status),
+      actorRef,
+    };
+  }
+
+  throw new HttpError(
+    502,
+    `Failed to start Apify run. Attempted actors: ${errors.join(" | ")}`,
+  );
+}
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -50,9 +103,10 @@ serve(async (req) => {
     const organizationId = body.organizationId || auth.defaultOrganizationId;
     ensureOrgAccess(auth.organizationIds, organizationId);
 
-    const apifyToken = Deno.env.get("APIFY_TOKEN");
-    if (!apifyToken) {
-      throw new HttpError(500, "APIFY_TOKEN is not configured");
+    const apifyToken = getApifyToken();
+    const actorReferences = getApifyActorReferences();
+    if (!actorReferences.length) {
+      throw new HttpError(500, "No valid Apify actor reference configured");
     }
 
     const actorInput = {
@@ -61,36 +115,14 @@ serve(async (req) => {
       resultsLimit: postsLimit,
       addParentData: false,
     };
-
-    const apifyResponse = await fetch(
-      `https://api.apify.com/v2/acts/${APIFY_ACTOR_PATH}/runs?token=${apifyToken}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(actorInput),
-      },
-    );
-
-    if (!apifyResponse.ok) {
-      const errorText = await apifyResponse.text();
-      throw new HttpError(502, `Failed to start Apify run: ${errorText}`);
-    }
-
-    const apifyData = await apifyResponse.json();
-    const apifyRunId = apifyData?.data?.id as string | undefined;
-    const apifyStatus = mapApifyStatus(apifyData?.data?.status as string | undefined);
-
-    if (!apifyRunId) {
-      throw new HttpError(502, "Apify did not return a run id");
-    }
+    const apifyRun = await startApifyRun(actorReferences, apifyToken, actorInput);
 
     const filters = {
       postsLimit,
       sortBy,
       includeComments,
       includeCaptions,
+      actorRef: apifyRun.actorRef,
     };
 
     const { data: createdJob, error: insertError } = await auth.supabaseAdmin
@@ -100,8 +132,8 @@ serve(async (req) => {
         organization_id: organizationId,
         created_by_user_id: auth.userId,
         profile_username: profileUsername,
-        apify_run_id: apifyRunId,
-        status: apifyStatus,
+        apify_run_id: apifyRun.runId,
+        status: apifyRun.status,
         filters,
       })
       .select("id, status, apify_run_id")
@@ -115,6 +147,7 @@ serve(async (req) => {
       jobId: createdJob.id,
       status: createdJob.status,
       apifyRunId: createdJob.apify_run_id,
+      actorRef: apifyRun.actorRef,
     });
   } catch (error) {
     if (error instanceof HttpError) {
@@ -125,4 +158,3 @@ serve(async (req) => {
     return jsonResponse(500, { error: message });
   }
 });
-

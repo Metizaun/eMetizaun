@@ -28,11 +28,20 @@ export function EventBlock({ layout, onClick }: EventBlockProps) {
     return (
         <button
             type="button"
+            draggable
+            onDragStart={(e) => {
+                const durationMs = parseISO(event.end_time).getTime() - parseISO(event.start_time).getTime();
+                e.dataTransfer.setData('application/calendar-event', JSON.stringify({
+                    id: event.id,
+                    durationMs,
+                }));
+                e.dataTransfer.effectAllowed = 'move';
+            }}
             onClick={(e) => {
                 e.stopPropagation();
                 onClick(event.id);
             }}
-            className="absolute rounded px-1.5 py-0.5 text-left overflow-hidden cursor-pointer
+            className="absolute rounded px-1.5 py-0.5 text-left overflow-hidden cursor-move
         transition-all duration-150 hover:shadow-md hover:brightness-95 active:scale-[0.98]
         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
             style={{

@@ -31,6 +31,7 @@ export function CalendarBoard({
   onRangeChange,
   onCreateFromSelection,
   onSelectEvent,
+  onMoveOrResizeEvent,
   onNewEvent,
   tableMissing,
 }: CalendarBoardProps) {
@@ -90,6 +91,7 @@ export function CalendarBoard({
             events={filteredEvents}
             onSelectEvent={onSelectEvent}
             onCreateAtTime={handleCreateAtTime}
+            onMoveOrResizeEvent={onMoveOrResizeEvent}
           />
         );
       case 'day':
@@ -99,6 +101,7 @@ export function CalendarBoard({
             events={filteredEvents}
             onSelectEvent={onSelectEvent}
             onCreateAtTime={handleCreateAtTime}
+            onMoveOrResizeEvent={onMoveOrResizeEvent}
           />
         );
       case 'month':
@@ -109,6 +112,7 @@ export function CalendarBoard({
             events={filteredEvents}
             onSelectEvent={onSelectEvent}
             onDayClick={handleMonthDayClick}
+            onMoveOrResizeEvent={onMoveOrResizeEvent}
           />
         );
     }

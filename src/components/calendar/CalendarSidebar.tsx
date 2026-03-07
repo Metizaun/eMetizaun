@@ -34,7 +34,7 @@ export function CalendarSidebar({
     };
 
     return (
-        <aside className="w-[248px] shrink-0 hidden lg:block border-r border-border/40 pr-4">
+        <aside className="w-[280px] shrink-0 hidden lg:block border-r border-border/40 pr-4">
             {/* Mini Calendar */}
             <div className="pb-4">
                 <Calendar

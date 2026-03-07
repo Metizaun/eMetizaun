@@ -71,6 +71,54 @@ export function mapApifyStatus(rawStatus: string | null | undefined) {
   return "queued";
 }
 
+function normalizeApifyActorReference(rawValue: string) {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return "";
+
+  const withoutConsoleUrl = trimmed
+    .replace(/^https?:\/\/console\.apify\.com\/actors\//i, "")
+    .replace(/^https?:\/\/apify\.com\//i, "")
+    .replace(/^actors\//i, "")
+    .replace(/^acts\//i, "")
+    .replace(/\/input$/i, "")
+    .replace(/\/$/, "");
+
+  // Apify API endpoint uses "~" as namespace separator in path (e.g. apify~instagram-scraper).
+  return withoutConsoleUrl.replace(/\//g, "~");
+}
+
+export function getApifyToken() {
+  const token = Deno.env.get("APIFY_TOKEN")?.trim();
+  if (!token) {
+    throw new HttpError(500, "APIFY_TOKEN is not configured");
+  }
+  return token;
+}
+
+export function getApifyActorReferences() {
+  const explicitList = Deno.env.get("APIFY_ACTOR_REFS")?.trim();
+  const explicitSingle =
+    Deno.env.get("APIFY_ACTOR_ID")?.trim() ||
+    Deno.env.get("APIFY_ACTOR_PATH")?.trim();
+
+  const defaults = [
+    "apify~instagram-scraper",
+    "xMc5Ga1oCONPmWJIa",
+  ];
+
+  const sourceValues = explicitList
+    ? explicitList.split(",")
+    : explicitSingle
+      ? [explicitSingle]
+      : defaults;
+
+  const normalized = sourceValues
+    .map(normalizeApifyActorReference)
+    .filter(Boolean);
+
+  return [...new Set(normalized)];
+}
+
 export function sortScrapeItems<T extends { likes_count: number | null; views_count: number | null; posted_at: string | null }>(
   items: T[],
   sortBy: "most_liked" | "most_viewed" | "recent",
@@ -183,4 +231,3 @@ export function ensureOrgAccess(organizationIds: string[], organizationId: strin
     throw new HttpError(403, "You do not have access to this organization");
   }
 }
-

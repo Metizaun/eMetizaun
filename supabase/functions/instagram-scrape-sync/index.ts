@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import {
   corsHeaders,
   ensureOrgAccess,
+  getApifyToken,
   getAuthContext,
   HttpError,
   jsonResponse,
@@ -121,10 +122,7 @@ serve(async (req) => {
     }
 
     const auth = await getAuthContext(req);
-    const apifyToken = Deno.env.get("APIFY_TOKEN");
-    if (!apifyToken) {
-      throw new HttpError(500, "APIFY_TOKEN is not configured");
-    }
+    const apifyToken = getApifyToken();
 
     const { data: job, error: jobError } = await auth.supabaseAdmin
       .schema("research")
@@ -265,4 +263,3 @@ serve(async (req) => {
     return jsonResponse(500, { error: message });
   }
 });
-

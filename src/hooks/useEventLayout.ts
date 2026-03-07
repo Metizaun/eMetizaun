@@ -5,11 +5,11 @@ import type { CalendarEvent } from '@/hooks/useCalendarEvents';
 /** Height in pixels for one hour in the time grid */
 export const HOUR_HEIGHT = 60;
 
-/** First visible hour in the grid (e.g., 6 = 06:00) */
-export const DAY_START_HOUR = 6;
+/** First visible hour in the grid (0 = 00:00) */
+export const DAY_START_HOUR = 0;
 
-/** Last visible hour in the grid (e.g., 22 = 22:00) */
-export const DAY_END_HOUR = 22;
+/** Last visible hour in the grid (24 = 24:00, i.e. midnight end) */
+export const DAY_END_HOUR = 24;
 
 /** Total visible hours */
 export const VISIBLE_HOURS = DAY_END_HOUR - DAY_START_HOUR;

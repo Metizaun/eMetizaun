@@ -14,9 +14,11 @@ export function TimeGutter() {
                     className="relative"
                     style={{ height: HOUR_HEIGHT }}
                 >
-                    <span className="absolute -top-[9px] right-2 text-[11px] font-medium text-muted-foreground tabular-nums">
-                        {String(hour).padStart(2, '0')}:00
-                    </span>
+                    {hour !== 0 && (
+                        <span className="absolute -top-[9px] right-2 text-[11px] font-medium text-muted-foreground tabular-nums">
+                            {String(hour).padStart(2, '0')}:00
+                        </span>
+                    )}
                 </div>
             ))}
         </div>

@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import {
   corsHeaders,
   ensureOrgAccess,
+  getApifyToken,
   getAuthContext,
   HttpError,
   jsonResponse,
@@ -59,7 +60,7 @@ serve(async (req) => {
     const job = jobRow as ScrapeJobRow & Record<string, unknown>;
     ensureOrgAccess(auth.organizationIds, job.organization_id);
 
-    const apifyToken = Deno.env.get("APIFY_TOKEN");
+    const apifyToken = Deno.env.get("APIFY_TOKEN")?.trim() ? getApifyToken() : null;
     if (apifyToken && job.apify_run_id && job.status !== "succeeded" && job.status !== "failed") {
       const runResponse = await fetch(
         `https://api.apify.com/v2/actor-runs/${job.apify_run_id}?token=${apifyToken}`,
@@ -126,4 +127,3 @@ serve(async (req) => {
     return jsonResponse(500, { error: message });
   }
 });
-
