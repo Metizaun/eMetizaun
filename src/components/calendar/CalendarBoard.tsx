@@ -1,21 +1,11 @@
-﻿import { useRef } from 'react';
-
-import FullCalendar from '@fullcalendar/react';
-import dayGridPlugin from '@fullcalendar/daygrid';
-import timeGridPlugin from '@fullcalendar/timegrid';
-import listPlugin from '@fullcalendar/list';
-import interactionPlugin from '@fullcalendar/interaction';
-import ptBrLocale from '@fullcalendar/core/locales/pt-br';
-import type {
-  DateSelectArg,
-  DatesSetArg,
-  EventClickArg,
-  EventDropArg,
-  EventInput,
-  EventResizeDoneArg,
-} from '@fullcalendar/core';
-
-import type { CalendarEvent } from '@/hooks/useCalendarEvents';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCalendarNavigation, type CalendarView } from '@/hooks/useCalendarNavigation';
+import { CalendarHeader } from './CalendarHeader';
+import { CalendarSidebar } from './CalendarSidebar';
+import { WeekView } from './WeekView';
+import { DayView } from './DayView';
+import { MonthView } from './MonthView';
+import type { CalendarEvent, CalendarEventStatus } from '@/hooks/useCalendarEvents';
 
 interface CalendarBoardProps {
   events: CalendarEvent[];
@@ -29,39 +19,11 @@ interface CalendarBoardProps {
     end_time: string;
     all_day: boolean;
   }) => Promise<void>;
+  onNewEvent: () => void;
+  tableMissing?: boolean;
 }
 
-const STATUS_COLORS: Record<CalendarEvent['status'], { bg: string; border: string }> = {
-  scheduled: { bg: '#2563eb', border: '#1d4ed8' },
-  confirmed: { bg: '#059669', border: '#047857' },
-  cancelled: { bg: '#dc2626', border: '#b91c1c' },
-  done: { bg: '#4b5563', border: '#374151' },
-  no_show: { bg: '#d97706', border: '#b45309' },
-};
-
-const fallbackEndDate = (start: Date, allDay: boolean): Date => {
-  const delta = allDay ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
-  return new Date(start.getTime() + delta);
-};
-
-const toEventInput = (event: CalendarEvent): EventInput => {
-  const colors = STATUS_COLORS[event.status];
-  return {
-    id: event.id,
-    title: event.title,
-    start: event.start_time,
-    end: event.end_time,
-    allDay: event.all_day,
-    backgroundColor: colors.bg,
-    borderColor: colors.border,
-    extendedProps: {
-      status: event.status,
-      source: event.source,
-      lead_id: event.lead_id,
-      contact_id: event.contact_id,
-    },
-  };
-};
+const ALL_STATUSES: CalendarEventStatus[] = ['scheduled', 'confirmed', 'cancelled', 'done', 'no_show'];
 
 export function CalendarBoard({
   events,
@@ -70,95 +32,126 @@ export function CalendarBoard({
   onCreateFromSelection,
   onSelectEvent,
   onMoveOrResizeEvent,
+  onNewEvent,
+  tableMissing,
 }: CalendarBoardProps) {
-  const lastRangeRef = useRef<string | null>(null);
+  const nav = useCalendarNavigation();
+  const [statusFilters, setStatusFilters] = useState<CalendarEventStatus[]>([...ALL_STATUSES]);
 
-  const handleDatesSet = (arg: DatesSetArg) => {
-    const nextRangeKey = `${arg.startStr}|${arg.endStr}`;
-    if (lastRangeRef.current === nextRangeKey) {
-      return;
-    }
+  // Notify parent when visible range changes
+  useEffect(() => {
+    const { start, end } = nav.visibleRange;
+    onRangeChange(start.toISOString(), end.toISOString());
+  }, [nav.visibleRange, onRangeChange]);
 
-    lastRangeRef.current = nextRangeKey;
-    onRangeChange(arg.startStr, arg.endStr);
-  };
+  // Filter events by status
+  const filteredEvents = useMemo(() => {
+    return events.filter((e) => statusFilters.includes(e.status));
+  }, [events, statusFilters]);
 
-  const handleSelect = (arg: DateSelectArg) => {
-    onCreateFromSelection({
-      start: arg.start.toISOString(),
-      end: arg.end.toISOString(),
-      allDay: arg.allDay,
-    });
-  };
-
-  const handleEventClick = (arg: EventClickArg) => {
-    onSelectEvent(arg.event.id);
-  };
-
-  const persistEventTiming = async (
-    arg: EventDropArg | EventResizeDoneArg
-  ) => {
-    const { event } = arg;
-    const start = event.start;
-
-    if (!start) {
-      arg.revert();
-      return;
-    }
-
-    const end = event.end ?? fallbackEndDate(start, event.allDay);
-
-    try {
-      await onMoveOrResizeEvent({
-        id: event.id,
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
-        all_day: event.allDay,
+  // Handle click-to-create on time grid
+  const handleCreateAtTime = useCallback(
+    (day: Date, hour: number, minutes: number) => {
+      const start = new Date(day);
+      start.setHours(hour, minutes, 0, 0);
+      const end = new Date(start);
+      end.setHours(hour + 1, minutes, 0, 0);
+      onCreateFromSelection({
+        start: start.toISOString(),
+        end: end.toISOString(),
+        allDay: false,
       });
-    } catch (error) {
-      console.error('Failed to persist moved event:', error);
-      arg.revert();
+    },
+    [onCreateFromSelection],
+  );
+
+  // Handle day click in month view
+  const handleMonthDayClick = useCallback(
+    (day: Date) => {
+      nav.goToDate(day);
+      nav.setView('day');
+    },
+    [nav],
+  );
+
+  // Handle sidebar date select
+  const handleSidebarDateSelect = useCallback(
+    (date: Date) => {
+      nav.goToDate(date);
+    },
+    [nav],
+  );
+
+  const renderView = () => {
+    switch (nav.view) {
+      case 'week':
+        return (
+          <WeekView
+            days={nav.weekDays}
+            events={filteredEvents}
+            onSelectEvent={onSelectEvent}
+            onCreateAtTime={handleCreateAtTime}
+            onMoveOrResizeEvent={onMoveOrResizeEvent}
+          />
+        );
+      case 'day':
+        return (
+          <DayView
+            day={nav.currentDate}
+            events={filteredEvents}
+            onSelectEvent={onSelectEvent}
+            onCreateAtTime={handleCreateAtTime}
+            onMoveOrResizeEvent={onMoveOrResizeEvent}
+          />
+        );
+      case 'month':
+        return (
+          <MonthView
+            weeks={nav.monthWeeks}
+            currentDate={nav.currentDate}
+            events={filteredEvents}
+            onSelectEvent={onSelectEvent}
+            onDayClick={handleMonthDayClick}
+            onMoveOrResizeEvent={onMoveOrResizeEvent}
+          />
+        );
     }
   };
 
   return (
-    <div className="relative rounded-lg border bg-card p-3 sm:p-4 h-[72vh]">
-      <FullCalendar
-        plugins={[dayGridPlugin, timeGridPlugin, listPlugin, interactionPlugin]}
-        locales={[ptBrLocale]}
-        locale="pt-br"
-        initialView="dayGridMonth"
-        headerToolbar={{
-          left: 'prev,next today',
-          center: 'title',
-          right: 'dayGridMonth,timeGridWeek,timeGridDay,listWeek',
-        }}
-        buttonText={{
-          today: 'Hoje',
-          month: 'Mês',
-          week: 'Semana',
-          day: 'Dia',
-          list: 'Agenda',
-        }}
-        events={events.map(toEventInput)}
-        editable
-        selectable
-        selectMirror
-        dayMaxEvents
-        nowIndicator
-        height="100%"
-        datesSet={handleDatesSet}
-        select={handleSelect}
-        eventClick={handleEventClick}
-        eventDrop={persistEventTiming}
-        eventResize={persistEventTiming}
+    <div className="flex flex-col h-full">
+      <CalendarHeader
+        periodLabel={nav.periodLabel}
+        view={nav.view}
+        onPrev={nav.goPrev}
+        onNext={nav.goNext}
+        onToday={nav.goToday}
+        onViewChange={nav.setView}
+        onNewEvent={onNewEvent}
+        disabled={tableMissing}
       />
 
-      {loading && (
-        <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] rounded-lg flex items-center justify-center text-sm font-medium">
-          Carregando eventos...
+      <div className="flex gap-4 flex-1 min-h-0">
+        <CalendarSidebar
+          selectedDate={nav.currentDate}
+          onDateSelect={handleSidebarDateSelect}
+          statusFilters={statusFilters}
+          onStatusFiltersChange={setStatusFilters}
+        />
+
+        <div className="flex-1 min-h-0 relative">
+          {renderView()}
+
+          {loading && (
+            <div className="absolute inset-0 bg-background/50 backdrop-blur-[1px] flex items-center justify-center z-30">
+              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                Carregando eventos...
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

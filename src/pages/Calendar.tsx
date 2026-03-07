@@ -1,7 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Plus } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useOrganizationContext } from '@/hooks/useOrganizationContext';
 import { useCalendarEvents, type CalendarEventUpdate, type CalendarEventInsert } from '@/hooks/useCalendarEvents';
@@ -258,24 +257,9 @@ export default function Calendar() {
   }, []);
 
   return (
-    <div className="space-y-4 h-full overflow-auto">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold">Calendar</h1>
-          <p className="text-sm text-muted-foreground">
-            Agenda da organização em tempo real.
-            {currentOrganization?.timezone ? ` Timezone: ${currentOrganization.timezone}` : ''}
-          </p>
-        </div>
-
-        <Button onClick={openAddDialog} disabled={tableMissing}>
-          <Plus className="h-4 w-4 mr-2" />
-          Novo evento
-        </Button>
-      </div>
-
+    <div className="h-full flex flex-col overflow-hidden">
       {tableMissing ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 space-y-2">
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 space-y-2 m-4">
           <div className="flex items-center gap-2 font-semibold text-destructive">
             <AlertTriangle className="h-4 w-4" />
             Tabela `public.calendar_events` não encontrada
@@ -284,7 +268,7 @@ export default function Calendar() {
             A migration do calendário ainda não foi aplicada no projeto Supabase atual.
           </p>
           <pre className="text-xs bg-background border rounded p-2 overflow-auto">
-{`supabase db push --project-ref hkqrgomafbohittsdnea`}
+            {`supabase db push --project-ref hkqrgomafbohittsdnea`}
           </pre>
           <p className="text-xs text-muted-foreground">
             Depois do `db push`, recarregue a página.
@@ -298,6 +282,8 @@ export default function Calendar() {
           onCreateFromSelection={handleCreateFromSelection}
           onSelectEvent={handleOpenEvent}
           onMoveOrResizeEvent={handleMoveOrResizeEvent}
+          onNewEvent={openAddDialog}
+          tableMissing={tableMissing}
         />
       )}
 

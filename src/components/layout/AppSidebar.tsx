@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Home, Users, Building2, Target, CheckSquare, BarChart3, Settings, ChevronDown, ChevronRight, UserPlus, Bell, StickyNote, Sparkles, Handshake, Search, Keyboard, Database, List, PenTool, CalendarDays, Inbox } from "lucide-react";
+import { Home, Users, Building2, Target, CheckSquare, BarChart3, Settings, ChevronDown, ChevronRight, UserPlus, Bell, StickyNote, Sparkles, Handshake, Search, Keyboard, Database, List, PenTool, CalendarDays, Inbox, Instagram } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, useSidebar, SidebarMenuSub, SidebarMenuSubButton, SidebarMenuSubItem } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
@@ -31,9 +31,13 @@ const quickActionItems = [{
   icon: CalendarDays,
   url: "/calendar"
 }, {
-  title: "Composer",
+  title: "Create",
   icon: PenTool,
-  url: "/composer"
+  url: "/create"
+}, {
+  title: "Instagram Analyzer",
+  icon: Instagram,
+  url: "/instagram-analyzer"
 }, {
   title: "Notes",
   icon: StickyNote,

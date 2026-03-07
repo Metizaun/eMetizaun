@@ -1,8 +1,8 @@
 project_id = "hkqrgomafbohittsdnea"
 
 [api]
-schemas = ["public", "graphql_public", "inbox"]
-extra_search_path = ["public", "extensions", "inbox"]
+schemas = ["public", "graphql_public", "inbox", "research"]
+extra_search_path = ["public", "extensions", "inbox", "research"]
 
 [auth]
 enabled = true

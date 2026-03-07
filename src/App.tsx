@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { OrganizationProvider } from "@/hooks/useOrganizationContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -25,9 +25,12 @@ import Search from "./pages/Search";
 import Partners from "./pages/Partners";
 import Notes from "./pages/Notes";
 import AIAssistant from "./pages/AIAssistant";
-import Composer from "./pages/Composer";
+import Create from "./pages/Create";
 import Notifications from "./pages/Notifications";
 import Inbox from "./pages/Inbox";
+import InstagramAnalyzer from "./pages/InstagramAnalyzer";
+import InstagramAnalyzerChat from "./pages/InstagramAnalyzerChat";
+import InstagramProject from "./pages/InstagramProject";
 import NotFound from "./pages/NotFound";
 import { MainLayout } from "./components/layout/MainLayout";
 
@@ -54,7 +57,7 @@ const App = () => (
                 <Route path="/deals" element={<ProtectedRoute><MainLayout><Deals /></MainLayout></ProtectedRoute>} />
                 <Route path="/partners" element={<ProtectedRoute><MainLayout><Partners /></MainLayout></ProtectedRoute>} />
                 <Route path="/tasks" element={<ProtectedRoute><MainLayout><Tasks /></MainLayout></ProtectedRoute>} />
-                <Route path="/calendar" element={<ProtectedRoute><MainLayout><Calendar /></MainLayout></ProtectedRoute>} />
+                <Route path="/calendar" element={<ProtectedRoute><MainLayout fluid><Calendar /></MainLayout></ProtectedRoute>} />
                 <Route path="/reports" element={<ProtectedRoute><MainLayout><Reports /></MainLayout></ProtectedRoute>} />
                 <Route path="/notifications" element={<ProtectedRoute><MainLayout><Notifications /></MainLayout></ProtectedRoute>} />
                 <Route path="/inbox" element={<ProtectedRoute><MainLayout fluid><Inbox /></MainLayout></ProtectedRoute>} />
@@ -63,7 +66,11 @@ const App = () => (
                 <Route path="/search-results" element={<ProtectedRoute><MainLayout><SearchResults /></MainLayout></ProtectedRoute>} />
                 <Route path="/notes" element={<ProtectedRoute><MainLayout><Notes /></MainLayout></ProtectedRoute>} />
                 <Route path="/ai-assistant" element={<ProtectedRoute><MainLayout><AIAssistant /></MainLayout></ProtectedRoute>} />
-                <Route path="/composer" element={<ProtectedRoute><MainLayout><Composer /></MainLayout></ProtectedRoute>} />
+                <Route path="/create" element={<ProtectedRoute><MainLayout><Create /></MainLayout></ProtectedRoute>} />
+                <Route path="/instagram-analyzer" element={<ProtectedRoute><MainLayout fluid><InstagramAnalyzer /></MainLayout></ProtectedRoute>} />
+                <Route path="/instagram-analyzer/chat" element={<ProtectedRoute><MainLayout><InstagramAnalyzerChat /></MainLayout></ProtectedRoute>} />
+                <Route path="/instagram-analyzer/projects/:projectId" element={<ProtectedRoute><MainLayout fluid><InstagramProject /></MainLayout></ProtectedRoute>} />
+                <Route path="/composer" element={<ProtectedRoute><Navigate to="/create" replace /></ProtectedRoute>} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
               </Routes>
