@@ -27,12 +27,59 @@ type ScrapeJobRow = {
   filters: {
     postsLimit?: number;
     sortBy?: "most_liked" | "most_viewed" | "recent";
+    onlyPostsNewerThan?: string | null;
     includeComments?: boolean;
     includeCaptions?: boolean;
   } | null;
 };
 
 const APIFY_DEFAULT_ITEMS_LIMIT = 24;
+
+function pickFirstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function getObjectValue(source: unknown, path: string) {
+  if (!source || typeof source !== "object") return undefined;
+
+  const parts = path.split(".");
+  let current: unknown = source;
+
+  for (const part of parts) {
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+
+  return current;
+}
+
+function pickImageFromVersions(source: unknown) {
+  const candidates = [
+    getObjectValue(source, "image_versions2.candidates"),
+    getObjectValue(source, "imageVersions2.candidates"),
+    getObjectValue(source, "image_versions.candidates"),
+    getObjectValue(source, "images"),
+  ];
+
+  for (const candidateList of candidates) {
+    if (!Array.isArray(candidateList)) continue;
+    for (const item of candidateList) {
+      if (!item || typeof item !== "object") continue;
+      const url = pickFirstString(
+        (item as Record<string, unknown>).url,
+        (item as Record<string, unknown>).src,
+      );
+      if (url) return url;
+    }
+  }
+
+  return null;
+}
 
 function mapApifyItem(
   item: Record<string, unknown>,
@@ -53,15 +100,45 @@ function mapApifyItem(
   }
 
   const videoUrl =
-    (item.videoUrl as string | undefined) ||
-    (item.video_url as string | undefined) ||
-    null;
+    pickFirstString(
+      item.videoUrl,
+      item.video_url,
+      item.video_url_hd,
+      item.videoPlayUrl,
+      item.playback_url,
+      getObjectValue(item, "video_versions.0.url"),
+      getObjectValue(item, "videoVersions.0.url"),
+    );
 
-  const displayUrl =
-    (item.displayUrl as string | undefined) ||
-    (item.imageUrl as string | undefined) ||
-    (item.thumbnailSrc as string | undefined) ||
-    null;
+  const staticImageUrl = pickFirstString(
+    item.displayUrl,
+    item.display_url,
+    item.thumbnailSrc,
+    item.thumbnail_url,
+    item.imageUrl,
+    item.image_url,
+    item.coverUrl,
+    item.cover_url,
+    item.poster_url,
+    getObjectValue(item, "cover.url"),
+    getObjectValue(item, "thumbnail.url"),
+    getObjectValue(item, "media.thumbnail_url"),
+    getObjectValue(item, "media.image_url"),
+    pickImageFromVersions(item),
+  );
+
+  const displayUrl = staticImageUrl;
+  const thumbnailUrl = pickFirstString(
+    item.thumbnailSrc,
+    item.thumbnail_url,
+    item.displayUrl,
+    item.display_url,
+    item.imageUrl,
+    item.image_url,
+    item.coverUrl,
+    item.cover_url,
+    displayUrl,
+  );
 
   const type =
     videoUrl || item.isVideo === true || String(item.type || "").toLowerCase().includes("video")
@@ -92,7 +169,7 @@ function mapApifyItem(
     platform_post_id: (item.id as string | undefined) || shortCode || null,
     type,
     permalink,
-    thumbnail_url: (item.thumbnailSrc as string | undefined) || displayUrl,
+    thumbnail_url: thumbnailUrl,
     display_url: displayUrl,
     video_url: videoUrl,
     caption,

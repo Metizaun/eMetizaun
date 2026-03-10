@@ -24,13 +24,124 @@ type ScrapeResultsGridProps = {
   onToggleSelection: (itemId: string, selected: boolean) => void;
 };
 
+type NormalizedComment = {
+  key: string;
+  author: string;
+  text: string;
+  dateLabel?: string;
+};
+
 function formatNumber(value: number | null) {
   if (typeof value !== "number") return "-";
   return new Intl.NumberFormat("pt-BR").format(value);
 }
 
 function getPreviewUrl(item: ResearchScrapeItem) {
-  return item.thumbnail_url || item.display_url || item.video_url || "";
+  return item.thumbnail_url || item.display_url || "";
+}
+
+function getNestedValue(source: unknown, path: string) {
+  if (!source || typeof source !== "object") return undefined;
+
+  const parts = path.split(".");
+  let current: unknown = source;
+
+  for (const part of parts) {
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+
+  return current;
+}
+
+function pickString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function formatCommentDate(raw: unknown) {
+  if (raw === null || raw === undefined) return undefined;
+
+  let date: Date | null = null;
+
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const timestamp = raw > 10_000_000_000 ? raw : raw * 1000;
+    date = new Date(timestamp);
+  } else if (typeof raw === "string" && raw.trim()) {
+    const numeric = Number(raw);
+    if (Number.isFinite(numeric)) {
+      const timestamp = numeric > 10_000_000_000 ? numeric : numeric * 1000;
+      date = new Date(timestamp);
+    } else {
+      date = new Date(raw);
+    }
+  }
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function normalizeComment(comment: unknown, index: number): NormalizedComment {
+  if (typeof comment === "string") {
+    return {
+      key: `comment-${index}-${comment.slice(0, 24)}`,
+      author: "Usuario",
+      text: comment.trim() || "Comentario sem conteudo legivel",
+    };
+  }
+
+  if (!comment || typeof comment !== "object") {
+    return {
+      key: `comment-${index}-unknown`,
+      author: "Usuario",
+      text: "Comentario sem conteudo legivel",
+    };
+  }
+
+  const author = pickString(
+    getNestedValue(comment, "username"),
+    getNestedValue(comment, "ownerUsername"),
+    getNestedValue(comment, "owner.username"),
+    getNestedValue(comment, "user.username"),
+    getNestedValue(comment, "author.username"),
+    getNestedValue(comment, "from.username"),
+    getNestedValue(comment, "author"),
+    getNestedValue(comment, "owner"),
+    getNestedValue(comment, "user"),
+    getNestedValue(comment, "from"),
+  ) || "Usuario";
+
+  const text = pickString(
+    getNestedValue(comment, "text"),
+    getNestedValue(comment, "content"),
+    getNestedValue(comment, "comment"),
+    getNestedValue(comment, "body"),
+    getNestedValue(comment, "message"),
+  ) || "Comentario sem conteudo legivel";
+
+  const dateLabel = formatCommentDate(
+    getNestedValue(comment, "timestamp") ??
+      getNestedValue(comment, "created_at") ??
+      getNestedValue(comment, "createdAt") ??
+      getNestedValue(comment, "time"),
+  );
+
+  return {
+    key: `comment-${index}-${author}-${text.slice(0, 20)}`,
+    author,
+    text,
+    dateLabel,
+  };
 }
 
 export function ScrapeResultsGrid({
@@ -42,12 +153,12 @@ export function ScrapeResultsGrid({
   const [commentsItem, setCommentsItem] = useState<ResearchScrapeItem | null>(null);
   const [mediaItem, setMediaItem] = useState<ResearchScrapeItem | null>(null);
 
-  const commentsList = useMemo(() => {
+  const normalizedComments = useMemo(() => {
     if (!commentsItem?.comments || !Array.isArray(commentsItem.comments)) {
       return [];
     }
 
-    return commentsItem.comments;
+    return commentsItem.comments.map((comment, index) => normalizeComment(comment, index));
   }, [commentsItem?.comments]);
 
   return (
@@ -117,6 +228,11 @@ export function ScrapeResultsGrid({
                               className="h-full w-full object-cover transition group-hover:scale-[1.02]"
                               loading="lazy"
                             />
+                          ) : item.type === "reel" && item.video_url ? (
+                            <div className="flex h-full flex-col items-center justify-center gap-2 bg-muted text-xs text-muted-foreground">
+                              <PlayCircle className="h-6 w-6" />
+                              <span>Reel sem thumbnail</span>
+                            </div>
                           ) : (
                             <div className="flex h-full items-center justify-center bg-muted text-xs text-muted-foreground">
                               Sem preview
@@ -178,10 +294,16 @@ export function ScrapeResultsGrid({
           </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             <div className="space-y-2 pr-3">
-              {commentsItem && Array.isArray(commentsItem.comments) && commentsItem.comments.length ? (
-                commentsItem.comments.map((comment, index) => (
-                  <div key={`${index}-${String(comment)}`} className="rounded-lg border bg-muted/20 p-3 text-sm">
-                    {typeof comment === "string" ? comment : JSON.stringify(comment)}
+              {normalizedComments.length ? (
+                normalizedComments.map((comment) => (
+                  <div key={comment.key} className="rounded-lg border bg-muted/20 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium">{comment.author}</p>
+                      {comment.dateLabel ? (
+                        <p className="text-xs text-muted-foreground">{comment.dateLabel}</p>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 text-sm text-foreground/90">{comment.text}</p>
                   </div>
                 ))
               ) : (
@@ -204,13 +326,19 @@ export function ScrapeResultsGrid({
             </div>
           ) : mediaItem ? (
             <div className="overflow-hidden rounded-lg border">
-              <AspectRatio ratio={4 / 5}>
-                <img
-                  src={getPreviewUrl(mediaItem)}
-                  alt={mediaItem.caption?.slice(0, 40) || mediaItem.permalink}
-                  className="h-full w-full object-cover"
-                />
-              </AspectRatio>
+              {getPreviewUrl(mediaItem) ? (
+                <AspectRatio ratio={4 / 5}>
+                  <img
+                    src={getPreviewUrl(mediaItem)}
+                    alt={mediaItem.caption?.slice(0, 40) || mediaItem.permalink}
+                    className="h-full w-full object-cover"
+                  />
+                </AspectRatio>
+              ) : (
+                <div className="flex h-64 items-center justify-center bg-muted text-sm text-muted-foreground">
+                  Sem preview disponivel.
+                </div>
+              )}
             </div>
           ) : null}
 

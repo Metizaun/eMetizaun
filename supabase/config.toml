@@ -40,3 +40,12 @@ verify_jwt = false
 
 [functions.delete-user]
 verify_jwt = false
+
+[functions.instagram-scrape-start]
+verify_jwt = false
+
+[functions.instagram-scrape-sync]
+verify_jwt = false
+
+[functions.instagram-scrape-status]
+verify_jwt = false

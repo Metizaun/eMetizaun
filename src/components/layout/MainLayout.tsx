@@ -6,9 +6,10 @@ import { cn } from "@/lib/utils";
 interface MainLayoutProps {
   children: React.ReactNode;
   fluid?: boolean;
+  noPadding?: boolean;
 }
 
-export function MainLayout({ children, fluid = false }: MainLayoutProps) {
+export function MainLayout({ children, fluid = false, noPadding = false }: MainLayoutProps) {
   return (
     <SidebarProvider>
       <div className="flex h-svh w-full overflow-hidden">
@@ -18,7 +19,7 @@ export function MainLayout({ children, fluid = false }: MainLayoutProps) {
           <main className={cn("flex-1 min-h-0 bg-background", fluid ? "overflow-hidden" : "overflow-y-auto")}>
             <div
               className={cn(
-                "px-6 py-4",
+                !noPadding && "px-6 py-4",
                 fluid
                   ? "h-full min-h-0 w-full overflow-hidden"
                   : "container mx-auto min-h-full"

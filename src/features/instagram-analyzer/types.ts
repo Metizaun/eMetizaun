@@ -16,6 +16,7 @@ export type InstagramSortBy = "most_liked" | "most_viewed" | "recent";
 export type InstagramScrapeFilters = {
   postsLimit: number;
   sortBy: InstagramSortBy;
+  onlyPostsNewerThan: string | null;
   includeComments: boolean;
   includeCaptions: boolean;
 };
@@ -48,7 +49,7 @@ export type InstagramScriptImproveResult = {
 export const DEFAULT_INSTAGRAM_FILTERS: InstagramScrapeFilters = {
   postsLimit: 24,
   sortBy: "recent",
+  onlyPostsNewerThan: null,
   includeComments: true,
   includeCaptions: true,
 };
-

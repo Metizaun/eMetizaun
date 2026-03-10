@@ -18,6 +18,7 @@ type ScrapeStartPayload = {
   filters?: {
     postsLimit?: number;
     sortBy?: "most_liked" | "most_viewed" | "recent";
+    onlyPostsNewerThan?: string | null;
     includeComments?: boolean;
     includeCaptions?: boolean;
   };
@@ -96,6 +97,10 @@ serve(async (req) => {
 
     const postsLimit = Math.min(50, Math.max(1, Number(body.filters?.postsLimit || 24)));
     const sortBy = body.filters?.sortBy || "recent";
+    const onlyPostsNewerThanRaw = typeof body.filters?.onlyPostsNewerThan === "string"
+      ? body.filters.onlyPostsNewerThan.trim()
+      : "";
+    const onlyPostsNewerThan = onlyPostsNewerThanRaw || null;
     const includeComments = Boolean(body.filters?.includeComments);
     const includeCaptions = body.filters?.includeCaptions !== false;
 
@@ -114,12 +119,14 @@ serve(async (req) => {
       resultsType: "posts",
       resultsLimit: postsLimit,
       addParentData: false,
+      ...(onlyPostsNewerThan ? { onlyPostsNewerThan } : {}),
     };
     const apifyRun = await startApifyRun(actorReferences, apifyToken, actorInput);
 
     const filters = {
       postsLimit,
       sortBy,
+      onlyPostsNewerThan,
       includeComments,
       includeCaptions,
       actorRef: apifyRun.actorRef,

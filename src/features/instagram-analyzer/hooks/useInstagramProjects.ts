@@ -13,6 +13,7 @@ import type {
 export type ResearchProjectStats = ResearchProject & {
   saved_items_count: number;
   documents_count: number;
+  preview_thumbnail_url: string | null;
 };
 
 export type ResearchSavedItemView = {
@@ -93,8 +94,9 @@ export function useInstagramProjects() {
       supabase
         .schema("research")
         .from("project_saved_items")
-        .select("project_id")
+        .select("project_id, scrape_item_id, created_at")
         .eq("organization_id", currentOrganization.id)
+        .order("created_at", { ascending: false })
         .in("project_id", projectIds),
       supabase
         .schema("research")
@@ -111,10 +113,45 @@ export function useInstagramProjects() {
       throw documentError;
     }
 
+    const previewItemIds = [...new Set((savedRows || []).map((row) => row.scrape_item_id))];
+    let previewItemsById = new Map<string, { thumbnail_url: string | null; display_url: string | null }>();
+
+    if (previewItemIds.length) {
+      const { data: previewRows, error: previewError } = await supabase
+        .schema("research")
+        .from("scrape_items")
+        .select("id, thumbnail_url, display_url")
+        .eq("organization_id", currentOrganization.id)
+        .in("id", previewItemIds);
+
+      if (previewError) {
+        throw previewError;
+      }
+
+      previewItemsById = new Map(
+        (previewRows || []).map((row) => [
+          row.id,
+          {
+            thumbnail_url: row.thumbnail_url,
+            display_url: row.display_url,
+          },
+        ]),
+      );
+    }
+
     const savedCountMap = new Map<string, number>();
+    const previewByProjectMap = new Map<string, string>();
     for (const row of savedRows || []) {
       const current = savedCountMap.get(row.project_id) || 0;
       savedCountMap.set(row.project_id, current + 1);
+
+      if (!previewByProjectMap.has(row.project_id)) {
+        const preview = previewItemsById.get(row.scrape_item_id);
+        const previewUrl = preview?.thumbnail_url || preview?.display_url;
+        if (previewUrl) {
+          previewByProjectMap.set(row.project_id, previewUrl);
+        }
+      }
     }
 
     const documentsCountMap = new Map<string, number>();
@@ -127,6 +164,7 @@ export function useInstagramProjects() {
       ...project,
       saved_items_count: savedCountMap.get(project.id) || 0,
       documents_count: documentsCountMap.get(project.id) || 0,
+      preview_thumbnail_url: previewByProjectMap.get(project.id) || null,
     }));
   }, [currentOrganization?.id]);
 
